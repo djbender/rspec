@@ -554,6 +554,33 @@ RSpec.describe RSpec::Core::ConfigurationOptions, :isolated_directory => true, :
       expect(config.exclusion_filter.rules).not_to have_key(:slow)
     end
 
+    it "allows --no-tag to clear inclusion filters from .rspec file" do
+      create_fixture_file("./.rspec", "--tag fast")
+      opts = config_options_object("--no-tag")
+      config = RSpec::Core::Configuration.new
+      opts.configure(config)
+      expect(config.inclusion_filter.rules).to be_empty
+      expect(config.exclusion_filter.rules).to be_empty
+    end
+
+    it "allows --no-tag to clear exclusion filters from .rspec file" do
+      create_fixture_file("./.rspec", "--tag ~slow")
+      opts = config_options_object("--no-tag")
+      config = RSpec::Core::Configuration.new
+      opts.configure(config)
+      expect(config.inclusion_filter.rules).to be_empty
+      expect(config.exclusion_filter.rules).to be_empty
+    end
+
+    it "allows --no-tag to clear mixed filters from .rspec file" do
+      create_fixture_file("./.rspec", "--tag fast --tag ~slow")
+      opts = config_options_object("--no-tag")
+      config = RSpec::Core::Configuration.new
+      opts.configure(config)
+      expect(config.inclusion_filter.rules).to be_empty
+      expect(config.exclusion_filter.rules).to be_empty
+    end
+
     it "prefers project file options over global file options" do
       create_fixture_file("./.rspec", "--format project")
       create_fixture_file("~/.rspec", "--format global")

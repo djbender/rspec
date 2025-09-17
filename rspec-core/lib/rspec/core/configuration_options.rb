@@ -44,9 +44,20 @@ module RSpec
       def organize_options
         @filter_manager_options = []
 
+        clear_all_tags = command_line_options[:clear_all_tags]
+
         @options = (file_options << command_line_options << env_options).each do |opts|
-          @filter_manager_options << [:include, opts.delete(:inclusion_filter)] if opts.key?(:inclusion_filter)
-          @filter_manager_options << [:exclude, opts.delete(:exclusion_filter)] if opts.key?(:exclusion_filter)
+          # If --no-tag was used, skip adding file-based filters but still add CLI filters
+          skip_filters = clear_all_tags && opts != command_line_options
+
+          unless skip_filters
+            @filter_manager_options << [:include, opts.delete(:inclusion_filter)] if opts.key?(:inclusion_filter)
+            @filter_manager_options << [:exclude, opts.delete(:exclusion_filter)] if opts.key?(:exclusion_filter)
+          else
+            # Still need to delete the keys to avoid them being processed elsewhere
+            opts.delete(:inclusion_filter)
+            opts.delete(:exclusion_filter)
+          end
         end
 
         @options = @options.inject(:libs => [], :requires => []) do |hash, opts|

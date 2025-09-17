@@ -272,6 +272,7 @@ FILTERING
         parser.on('--no-tag', 'Clear all previously set tag filters.') do |_|
           options[:inclusion_filter] = {}
           options[:exclusion_filter] = {}
+          options[:clear_all_tags] = true
         end
 
         parser.on('--default-path PATH', 'Set the default path where RSpec looks for examples (can',

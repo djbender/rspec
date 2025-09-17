@@ -103,3 +103,21 @@ Feature: `--tag` option
     Then the output should print the included tags {type: "special"}
     And the output should contain "2 examples"
     And the examples should all pass
+
+  Scenario: Clear tag filters from .rspec file with --no-tag
+    Given a file named ".rspec" with:
+      """
+      --tag focus
+      """
+    When I run `rspec . --no-tag`
+    Then the output should contain "6 examples"
+    And the examples should all pass
+
+  Scenario: Clear exclusion filters from .rspec file with --no-tag
+    Given a file named ".rspec" with:
+      """
+      --tag ~skip
+      """
+    When I run `rspec . --no-tag`
+    Then the output should contain "6 examples"
+    And the examples should all pass
