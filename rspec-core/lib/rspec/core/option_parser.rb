@@ -269,6 +269,11 @@ FILTERING
           add_tag_filter(options, filter_type, name, parsed_value)
         end
 
+        parser.on('--no-tag', 'Clear all previously set tag filters.') do |_|
+          options[:inclusion_filter] = {}
+          options[:exclusion_filter] = {}
+        end
+
         parser.on('--default-path PATH', 'Set the default path where RSpec looks for examples (can',
                   '  be a path to a file or a directory).') do |path|
           options[:default_path] = path

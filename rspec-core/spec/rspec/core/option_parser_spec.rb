@@ -313,6 +313,30 @@ module RSpec::Core
       end
     end
 
+    describe "--no-tag" do
+      it "clears inclusion filters" do
+        options = Parser.parse(%w[--tag foo --no-tag])
+        expect(options[:inclusion_filter]).to eq({})
+      end
+
+      it "clears exclusion filters" do
+        options = Parser.parse(%w[--tag ~foo --no-tag])
+        expect(options[:exclusion_filter]).to eq({})
+      end
+
+      it "clears both inclusion and exclusion filters" do
+        options = Parser.parse(%w[--tag foo --tag ~bar --no-tag])
+        expect(options[:inclusion_filter]).to eq({})
+        expect(options[:exclusion_filter]).to eq({})
+      end
+
+      it "allows new tags to be added after clearing" do
+        options = Parser.parse(%w[--tag foo --no-tag --tag bar])
+        expect(options[:inclusion_filter]).to eq(:bar => true)
+        expect(options[:exclusion_filter]).to eq({})
+      end
+    end
+
     describe "--order" do
       it "is nil by default" do
         expect(Parser.parse([])[:order]).to be_nil

@@ -92,3 +92,14 @@ Feature: `--tag` option
       | exclude {skip: true, speed: "slow"} |
       | exclude {speed: "slow", skip: true} |
     Then the examples should all pass
+
+  Scenario: Clear all tag filters with --no-tag
+    When I run `rspec . --tag focus --tag ~skip --no-tag`
+    Then the output should contain "6 examples"
+    And the examples should all pass
+
+  Scenario: Apply new filters after clearing with --no-tag
+    When I run `rspec . --tag focus --no-tag --tag type:special`
+    Then the output should print the included tags {type: "special"}
+    And the output should contain "2 examples"
+    And the examples should all pass
