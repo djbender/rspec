@@ -185,4 +185,98 @@ RSpec.describe RSpec::Core::ParallelRunner do
       end
     end
   end
+
+  describe "suite hooks run exactly once" do
+    it "runs before(:suite) once before any worker and after(:suite) once after all workers" do
+      hook_log_path = nil
+
+      Tempfile.create(['hook_log', '.txt']) do |hook_log_file|
+        hook_log_path = hook_log_file.path
+        hook_log_file.close
+
+        # Create a custom configuration with suite hooks
+        config = RSpec::Core::Configuration.new
+        config.before(:suite) do
+          File.open(hook_log_path, 'a') { |f| f.puts "before_suite:#{Process.pid}" }
+        end
+        config.after(:suite) do
+          File.open(hook_log_path, 'a') { |f| f.puts "after_suite:#{Process.pid}" }
+        end
+
+        # Create 3 example groups to run across 3 workers
+        group1 = RSpec.describe("Group 1") do
+          it("example 1") do
+            File.open(hook_log_path, 'a') { |f| f.puts "example1:#{Process.pid}" }
+            expect(true).to be true
+          end
+        end
+
+        group2 = RSpec.describe("Group 2") do
+          it("example 2") do
+            File.open(hook_log_path, 'a') { |f| f.puts "example2:#{Process.pid}" }
+            expect(true).to be true
+          end
+        end
+
+        group3 = RSpec.describe("Group 3") do
+          it("example 3") do
+            File.open(hook_log_path, 'a') { |f| f.puts "example3:#{Process.pid}" }
+            expect(true).to be true
+          end
+        end
+
+        # Run with 3 workers
+        parallel_runner = RSpec::Core::ParallelRunner.new(
+          example_groups: [group1, group2, group3],
+          worker_count: 3,
+          configuration: config
+        )
+
+        result = parallel_runner.run
+
+        # Verify examples ran successfully
+        aggregate_failures do
+          expect(result.example_count).to eq(3)
+          expect(result.passed_count).to eq(3)
+        end
+
+        # Parse the hook log
+        log_content = File.read(hook_log_path)
+        log_lines = log_content.split("\n")
+
+        # Extract PIDs
+        parent_pid = Process.pid
+        before_suite_entries = log_lines.select { |l| l.start_with?('before_suite:') }
+        after_suite_entries = log_lines.select { |l| l.start_with?('after_suite:') }
+        example_entries = log_lines.select { |l| l.start_with?('example') }
+
+        aggregate_failures do
+          # Verify suite hooks ran exactly once
+          expect(before_suite_entries.count).to eq(1), "before(:suite) should run exactly once"
+          expect(after_suite_entries.count).to eq(1), "after(:suite) should run exactly once"
+
+          # Verify suite hooks ran in parent process
+          before_suite_pid = before_suite_entries.first.split(':').last.to_i
+          after_suite_pid = after_suite_entries.first.split(':').last.to_i
+          expect(before_suite_pid).to eq(parent_pid), "before(:suite) should run in parent process"
+          expect(after_suite_pid).to eq(parent_pid), "after(:suite) should run in parent process"
+
+          # Verify examples ran in worker processes (not parent)
+          example_pids = example_entries.map { |e| e.split(':').last.to_i }.uniq
+          expect(example_pids).not_to include(parent_pid), "Examples should not run in parent process"
+          expect(example_pids.count).to eq(3), "Examples should run across 3 different worker processes"
+
+          # Verify execution order: before_suite appears before any example
+          before_suite_index = log_lines.index { |l| l.start_with?('before_suite:') }
+          first_example_index = log_lines.index { |l| l.start_with?('example') }
+          expect(before_suite_index).to be < first_example_index, "before(:suite) should run before any example"
+
+          # Verify execution order: after_suite appears after all examples
+          after_suite_index = log_lines.index { |l| l.start_with?('after_suite:') }
+          last_example_index = log_lines.rindex { |l| l.start_with?('example') }
+          expect(after_suite_index).to be > last_example_index, "after(:suite) should run after all examples"
+        end
+      end
+    end
+  end
 end

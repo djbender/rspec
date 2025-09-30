@@ -30,16 +30,19 @@ module RSpec
       # Run the example groups across worker processes
       # @return [Result] aggregated results from all workers
       def run
-        # Divide groups among workers
-        groups_per_worker = distribute_groups
+        # Run suite hooks in main process, wrapping worker execution
+        @configuration.with_suite_hooks do
+          # Divide groups among workers
+          groups_per_worker = distribute_groups
 
-        # Fork worker processes and collect results
-        worker_results = groups_per_worker.map.with_index do |groups, index|
-          run_worker(groups, index)
+          # Fork worker processes and collect results
+          worker_results = groups_per_worker.map.with_index do |groups, index|
+            run_worker(groups, index)
+          end
+
+          # Aggregate results
+          aggregate_results(worker_results)
         end
-
-        # Aggregate results
-        aggregate_results(worker_results)
       end
 
       private
