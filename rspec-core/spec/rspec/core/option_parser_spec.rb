@@ -382,6 +382,35 @@ module RSpec::Core
       end
     end
 
+    describe '--parallel' do
+      it 'sets parallel_workers to the specified count' do
+        options = Parser.parse(%w[--parallel=4])
+        expect(options[:parallel_workers]).to eq(4)
+      end
+
+      it 'sets parallel_workers to CPU count when no argument is provided' do
+        options = Parser.parse(%w[--parallel])
+        expect(options[:parallel_workers]).to eq(Etc.nprocessors)
+      end
+
+      it 'sets parallel_workers to 1 for invalid counts' do
+        expect_warning_without_call_site a_string_including("--parallel", "0")
+        options = Parser.parse(%w[--parallel=0])
+        expect(options[:parallel_workers]).to eq(1)
+      end
+
+      it 'warns and defaults to CPU count when a non-integer is specified' do
+        expect_warning_without_call_site a_string_including("--parallel", "many")
+        options = Parser.parse(%w[--parallel=many])
+        expect(options[:parallel_workers]).to eq(Etc.nprocessors)
+      end
+
+      it 'accepts parallel=1 to run sequentially' do
+        options = Parser.parse(%w[--parallel=1])
+        expect(options[:parallel_workers]).to eq(1)
+      end
+    end
+
     describe '--warning' do
       around do |ex|
         verbose = $VERBOSE
