@@ -6,6 +6,22 @@ module RSpec
     #
     # @private
     class ParallelRunner
+      # Buffer size for reading from pipes (4KB)
+      # This aligns with typical OS page size and is standard for pipe I/O
+      PIPE_READ_BUFFER_SIZE = 4096
+
+      # Signal sent to workers to stop execution (for fail-fast)
+      STOP_SIGNAL = "STOP"
+
+      # Number of bytes to read when checking for stop signal
+      STOP_SIGNAL_READ_SIZE = 4
+
+      # Exit code for successful worker completion
+      WORKER_SUCCESS_EXIT_CODE = 0
+
+      # Timeout for non-blocking stop signal check (0 = immediate return)
+      STOP_CHECK_TIMEOUT = 0
+
       # Result object returned from parallel execution
       class Result
         attr_reader :example_count, :passed_count, :failed_count, :pending_count
@@ -35,10 +51,23 @@ module RSpec
           # Divide groups among workers
           groups_per_worker = distribute_groups
 
+          # Create pipe for stop signal (used for fail-fast)
+          stop_reader, stop_writer = IO.pipe
+
           # Fork worker processes and collect results
-          worker_results = groups_per_worker.map.with_index do |groups, index|
-            run_worker(groups, index)
+          # We need to collect workers and wait for them concurrently to support fail-fast
+          workers = groups_per_worker.map.with_index do |groups, index|
+            fork_worker(groups, index, stop_reader)
           end
+
+          # Close the reader in parent (only workers read from it)
+          stop_reader.close
+
+          # Collect results from workers, monitoring for fail-fast condition
+          worker_results = collect_worker_results(workers, stop_writer)
+
+          # Close the stop writer
+          stop_writer.close
 
           # Aggregate results
           aggregate_results(worker_results)
@@ -59,10 +88,12 @@ module RSpec
         groups_per_worker
       end
 
-      # Run groups in a worker process
+      # Fork a worker process to run groups
       # @param groups [Array<ExampleGroup>] groups to run in this worker
       # @param _worker_index [Integer] worker index (reserved for future use in logging/debugging)
-      def run_worker(groups, _worker_index)
+      # @param stop_reader [IO] pipe to check for stop signal
+      # @return [Hash] worker information (pid, pipes)
+      def fork_worker(groups, _worker_index, stop_reader)
         # Create pipes for IPC and output capture
         result_reader, result_writer = IO.pipe
         stdout_reader, stdout_writer = IO.pipe
@@ -86,8 +117,8 @@ module RSpec
             $stdout = STDOUT
             $stderr = STDERR
 
-            # Run the groups
-            result = run_groups_in_worker(groups)
+            # Run the groups with stop signal checking
+            result = run_groups_in_worker(groups, stop_reader)
 
             # Flush any buffered output before restoring
             $stdout.flush
@@ -121,35 +152,84 @@ module RSpec
             result_writer.close
             stdout_writer.close
             stderr_writer.close
+            stop_reader.close
           end
-          exit!(0)
+          exit!(WORKER_SUCCESS_EXIT_CODE)
         end
 
         result_writer.close
         stdout_writer.close
         stderr_writer.close
 
-        # Read all streams concurrently to avoid deadlock
-        result_data, stdout_output, stderr_output = read_worker_streams(
-          result_reader, stdout_reader, stderr_reader
-        )
+        # Return worker info for later collection
+        {
+          pid: pid,
+          result_reader: result_reader,
+          stdout_reader: stdout_reader,
+          stderr_reader: stderr_reader
+        }
+      end
 
-        # Unmarshal the result
-        result = Marshal.load(result_data)
+      # Collect results from all workers, monitoring for fail-fast
+      # @param workers [Array<Hash>] worker information from fork_worker
+      # @param stop_writer [IO] pipe to signal workers to stop
+      # @return [Array<Hash>] results from all workers
+      def collect_worker_results(workers, stop_writer)
+        results = []
+        total_failures = 0
+        fail_fast_triggered = false
 
-        # Wait for worker to finish
-        Process.wait(pid)
+        workers.each do |worker|
+          # Read all streams concurrently to avoid deadlock
+          result_data, stdout_output, stderr_output = read_worker_streams(
+            worker[:result_reader], worker[:stdout_reader], worker[:stderr_reader]
+          )
 
-        # Replay worker output to main process
-        $stdout.write(stdout_output) unless stdout_output.empty?
-        $stderr.write(stderr_output) unless stderr_output.empty?
+          # Unmarshal the result
+          result = Marshal.load(result_data)
 
-        # Check if worker encountered an error
-        if result.is_a?(Hash) && result[:error]
-          raise "Worker process failed: #{result[:message]}\n#{result[:backtrace]&.join("\n")}"
+          # Wait for worker to finish
+          Process.wait(worker[:pid])
+
+          # Replay worker output to main process
+          $stdout.write(stdout_output) unless stdout_output.empty?
+          $stderr.write(stderr_output) unless stderr_output.empty?
+
+          # Check if worker encountered an error
+          if result.is_a?(Hash) && result[:error]
+            raise "Worker process failed: #{result[:message]}\n#{result[:backtrace]&.join("\n")}"
+          end
+
+          results << result
+
+          # Check fail-fast condition
+          total_failures += result[:failed_count]
+          if should_stop_for_fail_fast?(total_failures) && !fail_fast_triggered
+            fail_fast_triggered = true
+            # Signal remaining workers to stop
+            begin
+              stop_writer.write(STOP_SIGNAL)
+              stop_writer.flush
+            rescue Errno::EPIPE
+              # Pipe already closed (all workers finished), ignore
+            end
+          end
         end
 
-        result
+        results
+      end
+
+      # Check if we should trigger fail-fast
+      # @param failure_count [Integer] total failures so far
+      # @return [Boolean] true if fail-fast limit is met
+      def should_stop_for_fail_fast?(failure_count)
+        return false unless (fail_fast = @configuration.fail_fast)
+
+        if fail_fast == true
+          failure_count >= 1
+        else
+          failure_count >= fail_fast
+        end
       end
 
       # Read from multiple IO streams concurrently using IO.select
@@ -168,10 +248,7 @@ module RSpec
           ready, = IO.select(readers)
           ready.each do |io|
             begin
-              # Read in 4KB chunks - balances efficiency with responsiveness.
-              # This size aligns with typical OS page size and is a standard
-              # buffer size for pipe I/O operations.
-              data = io.readpartial(4096)
+              data = io.readpartial(PIPE_READ_BUFFER_SIZE)
               if io == result_reader
                 result_data << data
               elsif io == stdout_reader
@@ -190,12 +267,24 @@ module RSpec
       end
 
       # Run groups within a worker process
-      def run_groups_in_worker(groups)
+      # @param groups [Array<ExampleGroup>] groups to run
+      # @param stop_reader [IO] pipe to check for stop signal
+      def run_groups_in_worker(groups, stop_reader)
         # Create a simple reporter to track results
         reporter = SimpleReporter.new(@configuration)
 
         groups.each do |group|
+          # Check if we should stop (non-blocking check)
+          if should_stop?(stop_reader)
+            break
+          end
+
           group.run(reporter)
+
+          # Check fail-fast after each group
+          if reporter.fail_fast_limit_met?
+            break
+          end
         end
 
         {
@@ -204,6 +293,25 @@ module RSpec
           failed_count: reporter.failed_examples.size,
           pending_count: reporter.pending_examples.size
         }
+      end
+
+      # Check if parent has signaled to stop (non-blocking)
+      # @param stop_reader [IO] pipe to check for stop signal
+      # @return [Boolean] true if stop signal received
+      def should_stop?(stop_reader)
+        # Use IO.select with timeout for non-blocking check
+        ready, = IO.select([stop_reader], nil, nil, STOP_CHECK_TIMEOUT)
+        if ready
+          begin
+            # Try to read the stop signal
+            stop_reader.read_nonblock(STOP_SIGNAL_READ_SIZE)
+            return true
+          rescue IO::WaitReadable, EOFError
+            # No data available or pipe closed
+            return false
+          end
+        end
+        false
       end
 
       # Aggregate results from all workers
