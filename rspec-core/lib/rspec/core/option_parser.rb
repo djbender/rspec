@@ -1,5 +1,6 @@
 # http://www.ruby-doc.org/stdlib/libdoc/optparse/rdoc/classes/OptionParser.html
 require 'optparse'
+require 'etc'
 
 module RSpec::Core
   # @private
@@ -73,6 +74,27 @@ module RSpec::Core
                   '  smallest reproducible case.') do |argument|
           options[:bisect] = argument || true
           options[:runner] = RSpec::Core::Invocations::Bisect.new
+        end
+
+        parser.on('--parallel[=COUNT]', 'Run specs in parallel across multiple worker processes.',
+                  '  COUNT defaults to the number of CPU cores, or 1 to run sequentially.') do |count|
+          if count.nil? || count == true
+            # No argument provided, use CPU count
+            options[:parallel_workers] = Etc.nprocessors
+          else
+            begin
+              value = Integer(count)
+              if value < 1
+                RSpec.warning "Expected a positive integer for `--parallel`, got: #{count.inspect}", :call_site => nil
+                options[:parallel_workers] = 1
+              else
+                options[:parallel_workers] = value
+              end
+            rescue ArgumentError
+              RSpec.warning "Expected an integer value for `--parallel`, got: #{count.inspect}", :call_site => nil
+              options[:parallel_workers] = Etc.nprocessors
+            end
+          end
         end
 
         parser.on('--[no-]fail-fast[=COUNT]', 'Abort the run after a certain number of failures (1 by default).') do |argument|

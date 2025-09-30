@@ -232,6 +232,33 @@ module RSpec
         end
       end
 
+      # @macro define_reader
+      # If specified, indicates the number of worker processes to use for parallel
+      # execution (default: `nil` for sequential). Set to 1 to force sequential execution.
+      # When using `--parallel` CLI flag without a count, defaults to the number of CPU cores.
+      define_reader :parallel_workers
+
+      # @see parallel_workers
+      def parallel_workers=(value)
+        case value
+        when nil
+          @parallel_workers = nil
+        when Integer
+          if value < 1
+            RSpec.warning "Cannot set `RSpec.configuration.parallel_workers` " \
+                          "to `#{value.inspect}`. Must be a positive integer or `nil`. " \
+                          "Setting to `1` (sequential execution)."
+            @parallel_workers = 1
+          else
+            @parallel_workers = value
+          end
+        else
+          RSpec.warning "Cannot set `RSpec.configuration.parallel_workers` " \
+                        "to `#{value.inspect}`. Only positive integers and `nil` are valid values."
+          @parallel_workers = nil
+        end
+      end
+
       # @macro add_setting
       # Prints the formatter output of your suite without running any
       # examples or hooks.

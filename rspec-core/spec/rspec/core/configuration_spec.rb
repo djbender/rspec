@@ -124,6 +124,84 @@ module RSpec::Core
       end
     end
 
+    describe "#parallel_workers" do
+      it "defaults to `nil`" do
+        expect(RSpec::Core::Configuration.new.parallel_workers).to be(nil)
+      end
+    end
+
+    describe "#parallel_workers=" do
+      context 'when set to a positive integer' do
+        it 'is set to that value' do
+          config.parallel_workers = 4
+          expect(config.parallel_workers).to eq 4
+        end
+      end
+
+      context 'when set to 1' do
+        it 'is set to 1 (sequential execution)' do
+          config.parallel_workers = 1
+          expect(config.parallel_workers).to eq 1
+        end
+      end
+
+      context 'when set to nil' do
+        it 'is set to nil' do
+          config.parallel_workers = 4
+          config.parallel_workers = nil
+          expect(config.parallel_workers).to be nil
+        end
+      end
+
+      context 'when set to 0' do
+        before do
+          allow(RSpec).to receive(:warning)
+        end
+
+        it 'prints warning' do
+          config.parallel_workers = 0
+          expect(RSpec).to have_received(:warning).with(/Cannot set `RSpec.configuration.parallel_workers`/)
+        end
+
+        it 'is set to 1 (sequential)' do
+          config.parallel_workers = 0
+          expect(config.parallel_workers).to eq 1
+        end
+      end
+
+      context 'when set to a negative integer' do
+        before do
+          allow(RSpec).to receive(:warning)
+        end
+
+        it 'prints warning' do
+          config.parallel_workers = -1
+          expect(RSpec).to have_received(:warning).with(/Cannot set `RSpec.configuration.parallel_workers`/)
+        end
+
+        it 'is set to 1 (sequential)' do
+          config.parallel_workers = -1
+          expect(config.parallel_workers).to eq 1
+        end
+      end
+
+      context 'when set to a non-integer' do
+        before do
+          allow(RSpec).to receive(:warning)
+        end
+
+        it 'prints warning' do
+          config.parallel_workers = 'many'
+          expect(RSpec).to have_received(:warning).with(/Cannot set `RSpec.configuration.parallel_workers`/)
+        end
+
+        it 'is set to nil' do
+          config.parallel_workers = 'many'
+          expect(config.parallel_workers).to be nil
+        end
+      end
+    end
+
     describe 'fail_if_no_examples' do
       it 'defaults to false' do
         expect(RSpec::Core::Configuration.new.fail_if_no_examples).to be(false)
