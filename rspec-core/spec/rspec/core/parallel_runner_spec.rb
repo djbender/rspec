@@ -21,16 +21,6 @@ RSpec.describe RSpec::Core::ParallelRunner do
     end
   end
 
-  # Helper to mark an example as passing (RSpec requires at least one expectation)
-  def pass
-    expect(true).to be true
-  end
-
-  # Helper to mark an example as failing
-  def fail
-    expect(true).to be false
-  end
-
   describe "constants" do
     it "ensures STOP_SIGNAL_READ_SIZE is large enough for STOP_SIGNAL" do
       # Validate that the read size is at least as large as the signal
@@ -51,14 +41,14 @@ RSpec.describe RSpec::Core::ParallelRunner do
         group1 = RSpec.describe("Group 1") do
           it "passes in group 1" do
             File.open(log_path, 'a') { |f| f.puts "group1:#{Process.pid}" }
-            pass
+            expect(true).to be true
           end
         end
 
         group2 = RSpec.describe("Group 2") do
           it "passes in group 2" do
             File.open(log_path, 'a') { |f| f.puts "group2:#{Process.pid}" }
-            pass
+            expect(true).to be true
           end
         end
 
@@ -132,20 +122,20 @@ RSpec.describe RSpec::Core::ParallelRunner do
       group1 = RSpec.describe("Group 1") do
         it "produces stdout" do
           puts "stdout from worker 1"
-          pass
+          expect(true).to be true
         end
       end
 
       group2 = RSpec.describe("Group 2") do
         it "produces stderr" do
           $stderr.puts "stderr from worker 2"
-          pass
+          expect(true).to be true
         end
 
         it "produces both" do
           puts "more stdout"
           $stderr.puts "more stderr"
-          pass
+          expect(true).to be true
         end
       end
 
@@ -190,7 +180,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
           RSpec.describe("Group #{i}") do
             it("example #{i}") do
               File.open(log_path, 'a') { |f| f.puts "example#{i}:#{Process.pid}" }
-              pass
+              expect(true).to be true
             end
           end
         end
@@ -238,7 +228,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
           RSpec.describe("Group #{i}") do
             it("example #{i}") do
               File.open(log_path, 'a') { |f| f.puts "group#{i}:#{Process.pid}" }
-              pass
+              expect(true).to be true
             end
           end
         end
@@ -283,7 +273,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
                 expect(true).to be false
               else
                 # All other groups pass
-                pass
+                expect(true).to be true
               end
 
               File.open(log_path, 'a') { |f| f.puts "group#{i}:end" }
@@ -325,7 +315,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
               if i <= 2
                 expect(true).to be false
               else
-                pass
+                expect(true).to be true
               end
             end
           end
