@@ -30,6 +30,21 @@ RSpec.describe RSpec::Core::ParallelRunner do
   def fail
     expect(true).to be false
   end
+
+  describe "constants" do
+    it "ensures STOP_SIGNAL_READ_SIZE is large enough for STOP_SIGNAL" do
+      # Validate that the read size is at least as large as the signal
+      # This prevents truncation when reading the stop signal
+      expect(RSpec::Core::ParallelRunner::STOP_SIGNAL_READ_SIZE).to be >=
+        RSpec::Core::ParallelRunner::STOP_SIGNAL.bytesize
+    end
+
+    it "uses sensible buffer size for pipe I/O" do
+      # 4KB is standard page size and good for pipe I/O performance
+      expect(RSpec::Core::ParallelRunner::PIPE_READ_BUFFER_SIZE).to eq(4096)
+    end
+  end
+
   describe "basic two-process execution" do
     it "runs example groups across 2 worker processes and collects results" do
       with_temp_log do |log_path|
