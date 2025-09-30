@@ -279,4 +279,63 @@ RSpec.describe RSpec::Core::ParallelRunner do
       end
     end
   end
+
+  describe "work distribution" do
+    it "distributes example groups reasonably across workers" do
+      execution_log_path = nil
+
+      Tempfile.create(['execution_log', '.txt']) do |execution_log_file|
+        execution_log_path = execution_log_file.path
+        execution_log_file.close
+
+        # Create 10 example groups
+        groups = (1..10).map do |i|
+          log_path = execution_log_path
+          RSpec.describe("Group #{i}") do
+            it("example #{i}") do
+              File.open(log_path, 'a') { |f| f.puts "group#{i}:#{Process.pid}" }
+              expect(true).to be true
+            end
+          end
+        end
+
+        # Run with 3 workers
+        parallel_runner = RSpec::Core::ParallelRunner.new(
+          example_groups: groups,
+          worker_count: 3,
+          configuration: RSpec.configuration
+        )
+
+        result = parallel_runner.run
+
+        # Verify all examples ran successfully
+        aggregate_failures do
+          expect(result.example_count).to eq(10)
+          expect(result.passed_count).to eq(10)
+        end
+
+        # Parse execution log
+        log_content = File.read(execution_log_path)
+        log_lines = log_content.split("\n")
+
+        # Group by worker PID
+        groups_by_worker = log_lines.group_by { |line| line.split(':').last.to_i }
+
+        aggregate_failures do
+          # Verify we have exactly 3 workers
+          expect(groups_by_worker.keys.count).to eq(3), "Should have exactly 3 worker processes"
+
+          # Verify all groups executed
+          executed_groups = log_lines.map { |line| line.split(':').first }.sort
+          expected_groups = (1..10).map { |i| "group#{i}" }.sort
+          expect(executed_groups).to eq(expected_groups), "All groups should execute"
+
+          # Verify distribution is reasonable (no worker should be idle while work remains)
+          # With 10 groups and 3 workers: expect 4, 3, 3 or 3, 4, 3 distribution
+          work_counts = groups_by_worker.values.map(&:count).sort
+          expect(work_counts).to eq([3, 3, 4]), "Work should be distributed as evenly as possible (3, 3, 4)"
+        end
+      end
+    end
+  end
 end
