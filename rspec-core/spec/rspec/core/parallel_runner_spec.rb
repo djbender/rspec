@@ -335,4 +335,123 @@ RSpec.describe RSpec::Core::ParallelRunner do
       end
     end
   end
+
+  describe "configuration inheritance" do
+    it "workers inherit configuration settings from main process" do
+      with_temp_log do |log_path|
+        config = RSpec::Core::Configuration.new
+        config.default_path = 'custom_spec'
+        config.pattern = '**/*_custom.rb'
+
+        config.before(:example) do
+          File.open(log_path, 'a') { |f| f.puts "before_example:#{Process.pid}" }
+        end
+
+        config.after(:example) do
+          File.open(log_path, 'a') { |f| f.puts "after_example:#{Process.pid}" }
+        end
+
+        # Temporarily switch to custom config so hooks are registered on groups
+        original_config = RSpec.configuration
+        RSpec.configuration = config
+
+        groups = (1..3).map do |i|
+          RSpec.describe("Group #{i}") do
+            it("example #{i}") do
+              File.open(log_path, 'a') do |f|
+                f.puts "example#{i}:default_path:#{RSpec.configuration.default_path}"
+                f.puts "example#{i}:pattern:#{RSpec.configuration.pattern}"
+              end
+              expect(true).to be true
+            end
+          end
+        end
+
+        # Restore original config
+        RSpec.configuration = original_config
+
+        result = run_parallel(groups, worker_count: 3, configuration: config)
+        lines = File.read(log_path).split("\n")
+        parent_pid = Process.pid
+        before_hook_pids = lines.grep(/before_example:/).map { |l| l.split(':').last.to_i }
+        after_hook_pids = lines.grep(/after_example:/).map { |l| l.split(':').last.to_i }
+
+        aggregate_failures do
+          expect(result.example_count).to eq(3)
+          expect(result.passed_count).to eq(3)
+          expect(lines.grep(/example\d+:default_path:custom_spec/).count).to eq(3)
+          expect(lines.grep(/example\d+:pattern:\*\*\/\*_custom\.rb/).count).to eq(3)
+          expect(before_hook_pids.count).to eq(3)
+          expect(after_hook_pids.count).to eq(3)
+          expect(before_hook_pids).not_to include(parent_pid)
+          expect(after_hook_pids).not_to include(parent_pid)
+          expect(before_hook_pids.uniq.sort).to eq(after_hook_pids.uniq.sort)
+        end
+      end
+    end
+
+    it "workers inherit randomization seed" do
+      with_temp_log do |log_path|
+        config = RSpec::Core::Configuration.new
+        config.seed = 12345
+        config.order = :random
+
+        groups = (1..5).map do |i|
+          RSpec.describe("Group #{i}") do
+            it("example #{i}") do
+              File.open(log_path, 'a') do |f|
+                f.puts "example#{i}:seed:#{RSpec.configuration.seed}"
+              end
+              expect(true).to be true
+            end
+          end
+        end
+
+        result = run_parallel(groups, worker_count: 2, configuration: config)
+        lines = File.read(log_path).split("\n")
+        seeds = lines.grep(/example\d+:seed:/).map { |l| l.split(':').last.to_i }
+
+        aggregate_failures do
+          expect(result.example_count).to eq(5)
+          expect(result.passed_count).to eq(5)
+          expect(seeds.uniq).to eq([12345])
+        end
+      end
+    end
+
+    it "maintains bidirectional references between configuration and world" do
+      with_temp_log do |log_path|
+        config = RSpec::Core::Configuration.new
+        config.default_path = 'bidirectional_test'
+
+        group = RSpec.describe("Test") do
+          it("verifies bidirectional references") do
+            # Verify that RSpec.configuration and RSpec.world reference each other correctly
+            config_id = RSpec.configuration.object_id
+            world_id = RSpec.world.object_id
+            config_world_id = RSpec.configuration.world.object_id
+            world_config_id = RSpec.world.configuration.object_id
+
+            File.open(log_path, 'a') do |f|
+              f.puts "config_to_world_matches:#{config_world_id == world_id}"
+              f.puts "world_to_config_matches:#{world_config_id == config_id}"
+              f.puts "bidirectional:#{config_world_id == world_id && world_config_id == config_id}"
+            end
+            expect(true).to be true
+          end
+        end
+
+        result = run_parallel([group], worker_count: 1, configuration: config)
+        lines = File.read(log_path).split("\n")
+
+        aggregate_failures do
+          expect(result.example_count).to eq(1)
+          expect(result.passed_count).to eq(1)
+          expect(lines).to include("config_to_world_matches:true")
+          expect(lines).to include("world_to_config_matches:true")
+          expect(lines).to include("bidirectional:true")
+        end
+      end
+    end
+  end
 end

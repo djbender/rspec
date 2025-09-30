@@ -7,6 +7,9 @@ module RSpec
       # @private
       attr_reader :example_groups, :filtered_examples, :example_group_counts_by_spec_file
 
+      # @private
+      attr_accessor :configuration
+
       # Used internally to determine what to do when a SIGINT is received.
       attr_accessor :wants_to_quit
 
