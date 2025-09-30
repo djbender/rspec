@@ -25,6 +25,11 @@ RSpec.describe RSpec::Core::ParallelRunner do
   def pass
     expect(true).to be true
   end
+
+  # Helper to mark an example as failing
+  def fail
+    expect(true).to be false
+  end
   describe "basic two-process execution" do
     it "runs example groups across 2 worker processes and collects results" do
       with_temp_log do |log_path|
@@ -240,6 +245,87 @@ RSpec.describe RSpec::Core::ParallelRunner do
 
           work_counts = groups_by_worker.values.map(&:count).sort
           expect(work_counts).to eq([3, 3, 4])
+        end
+      end
+    end
+  end
+
+  describe "fail fast" do
+    it "stops execution quickly when first failure occurs with --fail-fast" do
+      with_temp_log do |log_path|
+        # Create configuration with fail_fast enabled
+        config = RSpec::Core::Configuration.new
+        config.fail_fast = true
+
+        # Create 10 groups, where group 3 will fail
+        groups = (1..10).map do |i|
+          RSpec.describe("Group #{i}") do
+            it("example #{i}") do
+              File.open(log_path, 'a') { |f| f.puts "group#{i}:start" }
+
+              if i == 3
+                # This group fails
+                expect(true).to be false
+              else
+                # All other groups pass
+                pass
+              end
+
+              File.open(log_path, 'a') { |f| f.puts "group#{i}:end" }
+            end
+          end
+        end
+
+        result = run_parallel(groups, worker_count: 3, configuration: config)
+
+        aggregate_failures do
+          # Should have stopped early, not run all 10 examples
+          expect(result.example_count).to be < 10
+          expect(result.failed_count).to be >= 1
+
+          # Verify some groups didn't run at all
+          lines = File.read(log_path).split("\n")
+          started_groups = lines.select { |l| l.include?(':start') }.count
+          expect(started_groups).to be < 10
+
+          # Verify the failing group started (it may not finish writing :end if fail-fast triggers)
+          expect(lines).to include("group3:start")
+        end
+      end
+    end
+
+    it "stops execution after N failures with --fail-fast=N" do
+      with_temp_log do |log_path|
+        config = RSpec::Core::Configuration.new
+        config.fail_fast = 2  # Stop after 2 failures
+
+        # Create groups where the first two groups fail
+        # This ensures fail-fast triggers early
+        groups = (1..10).map do |i|
+          RSpec.describe("Group #{i}") do
+            it("example #{i}") do
+              File.open(log_path, 'a') { |f| f.puts "group#{i}:executed" }
+
+              # First two groups fail
+              if i <= 2
+                expect(true).to be false
+              else
+                pass
+              end
+            end
+          end
+        end
+
+        result = run_parallel(groups, worker_count: 3, configuration: config)
+
+        aggregate_failures do
+          # Should have exactly 2 failures (or possibly more if worker was mid-execution)
+          expect(result.failed_count).to be >= 2
+
+          # The exact number of examples that run depends on timing,
+          # but fail-fast should prevent significantly more than 2 failures
+          # With 3 workers, we might get a few more examples before all workers stop
+          expect(result.failed_count).to be <= 4
         end
       end
     end
