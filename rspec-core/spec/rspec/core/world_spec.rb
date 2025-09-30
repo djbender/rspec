@@ -46,6 +46,24 @@ module RSpec::Core
       end
     end
 
+    describe "#configuration" do
+      it "returns the configuration passed during initialization" do
+        custom_config = RSpec::Core::Configuration.new
+        custom_world = World.new(custom_config)
+
+        expect(custom_world.configuration).to be(custom_config)
+      end
+
+      it "allows the configuration to be changed" do
+        custom_config = RSpec::Core::Configuration.new
+        custom_world = World.new(RSpec.configuration)
+
+        custom_world.configuration = custom_config
+
+        expect(custom_world.configuration).to be(custom_config)
+      end
+    end
+
     describe "#example_groups" do
       it "contains all registered example groups" do
         example_group = RSpec.describe("group") {}

@@ -270,6 +270,12 @@ module RSpec
       # @param groups [Array<ExampleGroup>] groups to run
       # @param stop_reader [IO] pipe to check for stop signal
       def run_groups_in_worker(groups, stop_reader)
+        # Set the global configuration to the one passed from parent
+        # This ensures workers use the same configuration as the main process
+        RSpec.configuration = @configuration
+        RSpec.world.configuration = @configuration
+        @configuration.world = RSpec.world
+
         # Create a simple reporter to track results
         reporter = SimpleReporter.new(@configuration)
 
