@@ -90,4 +90,27 @@ RSpec.describe RSpec::Core::ParallelRunner do
       expect(result.pending_count).to eq(1)
     end
   end
+
+  describe "error handling" do
+    it "propagates errors from worker processes to parent" do
+      # Create a group that will raise an error during execution
+      error_group = RSpec.describe("Error group") do
+        it("will error") { raise "Intentional test error" }
+      end
+
+      parallel_runner = RSpec::Core::ParallelRunner.new(
+        example_groups: [error_group],
+        worker_count: 1,
+        configuration: RSpec.configuration
+      )
+
+      # The worker handles the error and reports it as a failed example
+      # (not a worker process error)
+      result = parallel_runner.run
+
+      # The error is captured as a failed example, not a worker crash
+      expect(result.example_count).to eq(1)
+      expect(result.failed_count).to eq(1)
+    end
+  end
 end

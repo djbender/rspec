@@ -57,6 +57,8 @@ module RSpec
       end
 
       # Run groups in a worker process
+      # @param groups [Array<ExampleGroup>] groups to run in this worker
+      # @param _worker_index [Integer] worker index (reserved for future use in logging/debugging)
       def run_worker(groups, _worker_index)
         # Create pipe for IPC
         reader, writer = IO.pipe
@@ -70,6 +72,18 @@ module RSpec
 
             # Send result back to parent
             Marshal.dump(result, writer)
+          rescue StandardError => e
+            # Send error information back to parent
+            error_result = {
+              error: true,
+              message: e.message,
+              backtrace: e.backtrace,
+              example_count: 0,
+              passed_count: 0,
+              failed_count: 0,
+              pending_count: 0
+            }
+            Marshal.dump(error_result, writer)
           ensure
             writer.close
           end
@@ -88,13 +102,18 @@ module RSpec
         # Wait for worker to finish
         Process.wait(pid)
 
+        # Check if worker encountered an error
+        if result.is_a?(Hash) && result[:error]
+          raise "Worker process failed: #{result[:message]}\n#{result[:backtrace]&.join("\n")}"
+        end
+
         result
       end
 
       # Run groups within a worker process
       def run_groups_in_worker(groups)
         # Create a simple reporter to track results
-        reporter = SimpleReporter.new
+        reporter = SimpleReporter.new(@configuration)
 
         groups.each do |group|
           group.run(reporter)
@@ -131,7 +150,7 @@ module RSpec
       class SimpleReporter
         attr_reader :examples, :passed_examples, :failed_examples, :pending_examples
 
-        def initialize(configuration = RSpec.configuration)
+        def initialize(configuration)
           @examples = []
           @passed_examples = []
           @failed_examples = []
