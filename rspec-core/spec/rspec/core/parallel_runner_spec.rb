@@ -109,8 +109,80 @@ RSpec.describe RSpec::Core::ParallelRunner do
       result = parallel_runner.run
 
       # The error is captured as a failed example, not a worker crash
-      expect(result.example_count).to eq(1)
-      expect(result.failed_count).to eq(1)
+      aggregate_failures do
+        expect(result.example_count).to eq(1)
+        expect(result.failed_count).to eq(1)
+      end
+    end
+  end
+
+  describe "output collection and formatting" do
+    it "captures stdout and stderr from workers and replays through formatters" do
+      # Create groups that produce stdout and stderr output
+      group1 = RSpec.describe("Group 1") do
+        it "produces stdout" do
+          puts "stdout from worker 1"
+          expect(true).to be true
+        end
+      end
+
+      group2 = RSpec.describe("Group 2") do
+        it "produces stderr" do
+          $stderr.puts "stderr from worker 2"
+          expect(true).to be true
+        end
+
+        it "produces both" do
+          puts "more stdout"
+          $stderr.puts "more stderr"
+          expect(true).to be true
+        end
+      end
+
+      # Capture all output from the parallel runner
+      output = StringIO.new
+      error_output = StringIO.new
+
+      original_stdout = $stdout
+      original_stderr = $stderr
+
+      begin
+        $stdout = output
+        $stderr = error_output
+
+        parallel_runner = RSpec::Core::ParallelRunner.new(
+          example_groups: [group1, group2],
+          worker_count: 2,
+          configuration: RSpec.configuration
+        )
+
+        result = parallel_runner.run
+
+        aggregate_failures do
+          expect(result.example_count).to eq(3)
+          expect(result.passed_count).to eq(3)
+        end
+      ensure
+        $stdout = original_stdout
+        $stderr = original_stderr
+      end
+
+      # Verify all output was captured and replayed
+      output_str = output.string
+      error_str = error_output.string
+
+      aggregate_failures do
+        expect(output_str).to include("stdout from worker 1")
+        expect(output_str).to include("more stdout")
+        expect(error_str).to include("stderr from worker 2")
+        expect(error_str).to include("more stderr")
+
+        # Verify output appears exactly once (no duplication)
+        expect(output_str.scan(/stdout from worker 1/).count).to eq(1)
+        expect(output_str.scan(/more stdout/).count).to eq(1)
+        expect(error_str.scan(/stderr from worker 2/).count).to eq(1)
+        expect(error_str.scan(/more stderr/).count).to eq(1)
+      end
     end
   end
 end

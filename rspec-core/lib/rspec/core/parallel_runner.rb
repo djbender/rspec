@@ -60,18 +60,48 @@ module RSpec
       # @param groups [Array<ExampleGroup>] groups to run in this worker
       # @param _worker_index [Integer] worker index (reserved for future use in logging/debugging)
       def run_worker(groups, _worker_index)
-        # Create pipe for IPC
-        reader, writer = IO.pipe
+        # Create pipes for IPC and output capture
+        result_reader, result_writer = IO.pipe
+        stdout_reader, stdout_writer = IO.pipe
+        stderr_reader, stderr_writer = IO.pipe
 
         pid = fork do
-          reader.close
+          result_reader.close
+          stdout_reader.close
+          stderr_reader.close
 
           begin
+            # Redirect stdout and stderr to pipes
+            # We use STDOUT/STDERR constants (real IO file descriptors) instead of
+            # $stdout/$stderr (which may be reassigned to StringIO in tests).
+            # This ensures we can reliably dup/reopen the streams.
+            saved_stdout = STDOUT.dup
+            saved_stderr = STDERR.dup
+
+            STDOUT.reopen(stdout_writer)
+            STDERR.reopen(stderr_writer)
+            $stdout = STDOUT
+            $stderr = STDERR
+
             # Run the groups
             result = run_groups_in_worker(groups)
 
+            # Flush any buffered output before restoring
+            $stdout.flush
+            $stderr.flush
+
+            # Restore stdout/stderr for Marshal
+            # We must restore to original FDs because $stdout/$stderr might be
+            # StringIO objects in test environments (not real IO objects)
+            STDOUT.reopen(saved_stdout)
+            STDERR.reopen(saved_stderr)
+            $stdout = STDOUT
+            $stderr = STDERR
+            saved_stdout.close
+            saved_stderr.close
+
             # Send result back to parent
-            Marshal.dump(result, writer)
+            Marshal.dump(result, result_writer)
           rescue StandardError => e
             # Send error information back to parent
             error_result = {
@@ -83,24 +113,33 @@ module RSpec
               failed_count: 0,
               pending_count: 0
             }
-            Marshal.dump(error_result, writer)
+            Marshal.dump(error_result, result_writer)
           ensure
-            writer.close
+            result_writer.close
+            stdout_writer.close
+            stderr_writer.close
           end
           exit!(0)
         end
 
-        writer.close
+        result_writer.close
+        stdout_writer.close
+        stderr_writer.close
 
-        begin
-          # Read result from worker
-          result = Marshal.load(reader)
-        ensure
-          reader.close
-        end
+        # Read all streams concurrently to avoid deadlock
+        result_data, stdout_output, stderr_output = read_worker_streams(
+          result_reader, stdout_reader, stderr_reader
+        )
+
+        # Unmarshal the result
+        result = Marshal.load(result_data)
 
         # Wait for worker to finish
         Process.wait(pid)
+
+        # Replay worker output to main process
+        $stdout.write(stdout_output) unless stdout_output.empty?
+        $stderr.write(stderr_output) unless stderr_output.empty?
 
         # Check if worker encountered an error
         if result.is_a?(Hash) && result[:error]
@@ -108,6 +147,43 @@ module RSpec
         end
 
         result
+      end
+
+      # Read from multiple IO streams concurrently using IO.select
+      # @param result_reader [IO] pipe for reading marshaled result data
+      # @param stdout_reader [IO] pipe for reading worker stdout
+      # @param stderr_reader [IO] pipe for reading worker stderr
+      # @return [Array<String>] tuple of [result_data, stdout_output, stderr_output]
+      def read_worker_streams(result_reader, stdout_reader, stderr_reader)
+        result_data = String.new
+        stdout_output = String.new
+        stderr_output = String.new
+
+        # Use IO.select to read from multiple streams without blocking
+        readers = [result_reader, stdout_reader, stderr_reader]
+        until readers.empty?
+          ready, = IO.select(readers)
+          ready.each do |io|
+            begin
+              # Read in 4KB chunks - balances efficiency with responsiveness.
+              # This size aligns with typical OS page size and is a standard
+              # buffer size for pipe I/O operations.
+              data = io.readpartial(4096)
+              if io == result_reader
+                result_data << data
+              elsif io == stdout_reader
+                stdout_output << data
+              else
+                stderr_output << data
+              end
+            rescue EOFError
+              readers.delete(io)
+              io.close
+            end
+          end
+        end
+
+        [result_data, stdout_output, stderr_output]
       end
 
       # Run groups within a worker process
