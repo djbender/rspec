@@ -1,4 +1,5 @@
 require 'rspec/core/drb'
+require 'rspec/core/parallel_runner'
 require 'support/runner_support'
 
 module RSpec::Core
@@ -484,6 +485,93 @@ module RSpec::Core
           it "returns 2 if spec fails and --failure-exit-code is 2" do
             runner = build_runner failing_spec_filename, "--failure-exit-code", "2"
             expect(runner.run(err, out)).to eq 2
+          end
+
+          describe "with parallel execution" do
+            it "uses ParallelRunner when parallel_workers is set" do
+              allow(config).to receive(:files_to_run).and_return([passing_spec_filename])
+              config.parallel_workers = 2
+
+              runner = build_runner
+              runner.setup err, out
+
+              # Verify ParallelRunner is instantiated and used
+              parallel_runner_instance = instance_double(RSpec::Core::ParallelRunner)
+              allow(RSpec::Core::ParallelRunner).to receive(:new).and_return(parallel_runner_instance)
+              allow(parallel_runner_instance).to receive(:run).and_return(
+                RSpec::Core::ParallelRunner::Result.new(
+                  example_count: 1,
+                  passed_count: 1,
+                  failed_count: 0,
+                  pending_count: 0,
+                  worker_results: []
+                )
+              )
+              allow(parallel_runner_instance).to receive(:replay_notifications)
+
+              exit_code = runner.run_specs(runner.world.ordered_example_groups)
+
+              expect(RSpec::Core::ParallelRunner).to have_received(:new).with(
+                example_groups: runner.world.ordered_example_groups,
+                worker_count: 2,
+                configuration: config
+              )
+              expect(parallel_runner_instance).to have_received(:run)
+              expect(exit_code).to eq(0)
+            end
+
+            it "uses sequential execution when parallel_workers is nil" do
+              allow(config).to receive(:files_to_run).and_return([passing_spec_filename])
+              config.parallel_workers = nil
+
+              runner = build_runner
+              exit_code = runner.run(err, out)
+
+              # Should not use ParallelRunner
+              expect(RSpec::Core::ParallelRunner).not_to receive(:new)
+              expect(exit_code).to eq(0)
+            end
+
+            it "uses sequential execution when parallel_workers is 1" do
+              allow(config).to receive(:files_to_run).and_return([passing_spec_filename])
+              config.parallel_workers = 1
+
+              runner = build_runner
+              exit_code = runner.run(err, out)
+
+              # Should not use ParallelRunner
+              expect(RSpec::Core::ParallelRunner).not_to receive(:new)
+              expect(exit_code).to eq(0)
+            end
+
+            it "CLI --parallel flag overrides config.parallel_workers" do
+              allow(config).to receive(:files_to_run).and_return([passing_spec_filename])
+              config.parallel_workers = 2
+
+              # Simulate CLI override
+              runner = build_runner passing_spec_filename, "--parallel=4"
+              runner.setup err, out
+
+              parallel_runner_instance = instance_double(RSpec::Core::ParallelRunner)
+              allow(RSpec::Core::ParallelRunner).to receive(:new).and_return(parallel_runner_instance)
+              allow(parallel_runner_instance).to receive(:run).and_return(
+                RSpec::Core::ParallelRunner::Result.new(
+                  example_count: 1,
+                  passed_count: 1,
+                  failed_count: 0,
+                  pending_count: 0,
+                  worker_results: []
+                )
+              )
+              allow(parallel_runner_instance).to receive(:replay_notifications)
+
+              runner.run_specs(runner.world.ordered_example_groups)
+
+              # CLI value (4) should override config value (2)
+              expect(RSpec::Core::ParallelRunner).to have_received(:new).with(
+                hash_including(worker_count: 4)
+              )
+            end
           end
         end
       end

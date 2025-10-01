@@ -98,6 +98,12 @@ RSpec.configure do |c|
     with_env_vars('SHELL' => '/usr/local/bin/bash', &ex)
   end
 
+  # Tag integration tests to run them serially (not in parallel)
+  # Integration tests use Aruba which changes directories, causing issues in parallel mode
+  c.define_derived_metadata(:file_path => %r{/spec/integration/}) do |metadata|
+    metadata[:serial] = true
+  end
+
   if ENV['CI'] && RSpec::Support::OS.windows? && RUBY_VERSION.to_f < 2.3
     c.around(:example, :emits_warning_on_windows_on_old_ruby) do |ex|
       ignoring_warnings(&ex)

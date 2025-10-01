@@ -1,6 +1,5 @@
 # http://www.ruby-doc.org/stdlib/libdoc/optparse/rdoc/classes/OptionParser.html
 require 'optparse'
-require 'etc'
 
 module RSpec::Core
   # @private
@@ -78,6 +77,7 @@ module RSpec::Core
 
         parser.on('--parallel[=COUNT]', 'Run specs in parallel across multiple worker processes.',
                   '  COUNT defaults to the number of CPU cores, or 1 to run sequentially.') do |count|
+          require 'etc' # Lazy-load only when --parallel is used
           if count.nil? || count == true
             # No argument provided, use CPU count
             options[:parallel_workers] = Etc.nprocessors

@@ -10,7 +10,7 @@ function run_repos_one_by_one {
   for folder in `ls -d rspec-*`; do
     echo "Running $folder"
     pushd $folder
-      $ROOT_DIR/bin/rspec --format progress
+      $ROOT_DIR/bin/rspec --format progress --parallel
     popd
   done
 }
