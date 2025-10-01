@@ -151,6 +151,12 @@ module RSpec
         # Wrap parallel execution in reporter.report to ensure proper
         # formatter lifecycle (start, stop, notifications, etc.)
         examples_passed = @configuration.reporter.report(examples_count) do |reporter|
+          # Inform user about parallel execution (but not if we're already in a worker)
+          unless @configuration.in_parallel_worker
+            process_word = worker_count == 1 ? "process" : "processes"
+            reporter.message("\nRunning tests in parallel using #{worker_count} #{process_word}\n")
+          end
+
           parallel_runner = RSpec::Core::ParallelRunner.new(
             example_groups: example_groups,
             worker_count: worker_count,

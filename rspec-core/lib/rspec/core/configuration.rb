@@ -456,6 +456,9 @@ module RSpec
       # @private
       attr_accessor :static_config_filter_manager
       # @private
+      # Tracks whether we're currently running inside a parallel worker process
+      attr_accessor :in_parallel_worker
+      # @private
       attr_reader :backtrace_formatter, :ordering_manager, :loaded_spec_files
 
       # rubocop:disable Metrics/AbcSize
@@ -516,6 +519,7 @@ module RSpec
         @world = World::Null
         @pending_failure_output = :full
         @force_line_number_for_spec_rerun = false
+        @in_parallel_worker = false
 
         define_built_in_hooks
       end

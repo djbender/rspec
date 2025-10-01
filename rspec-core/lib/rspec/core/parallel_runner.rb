@@ -331,6 +331,8 @@ module RSpec
         # CRITICAL: Workers must run sequentially to avoid fork bomb
         # Set parallel_workers to nil to prevent workers from forking more workers
         @configuration.parallel_workers = nil
+        # Mark that we're running inside a parallel worker
+        @configuration.in_parallel_worker = true
 
         # Create a simple reporter to track results
         reporter = SimpleReporter.new(@configuration)

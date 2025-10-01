@@ -827,6 +827,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
       # Create configuration with custom formatter
       config = RSpec::Core::Configuration.new
       output = StringIO.new
+      config.output_stream = output  # Capture all output including messages
       config.add_formatter(custom_formatter, output)
       formatter = config.reporter.registered_listeners(:example_started).first
 
@@ -936,6 +937,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
 
       config = RSpec::Core::Configuration.new
       output = StringIO.new
+      config.output_stream = output  # Capture all output including messages
       config.add_formatter(custom_formatter, output)
       formatter = config.reporter.registered_listeners(:example_passed).first
       config.parallel_workers = 2
