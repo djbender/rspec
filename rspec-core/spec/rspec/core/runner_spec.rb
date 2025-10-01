@@ -572,6 +572,31 @@ module RSpec::Core
                 hash_including(worker_count: 4)
               )
             end
+
+            it "displays a message showing the number of processes being used" do
+              allow(config).to receive(:files_to_run).and_return([passing_spec_filename])
+              config.parallel_workers = 3
+
+              runner = build_runner
+              runner.setup err, out
+
+              parallel_runner_instance = instance_double(RSpec::Core::ParallelRunner)
+              allow(RSpec::Core::ParallelRunner).to receive(:new).and_return(parallel_runner_instance)
+              allow(parallel_runner_instance).to receive(:run).and_return(
+                RSpec::Core::ParallelRunner::Result.new(
+                  example_count: 1,
+                  passed_count: 1,
+                  failed_count: 0,
+                  pending_count: 0,
+                  worker_results: []
+                )
+              )
+              allow(parallel_runner_instance).to receive(:replay_notifications)
+
+              runner.run_specs(runner.world.ordered_example_groups)
+
+              expect(out.string).to include("Running tests in parallel using 3 processes")
+            end
           end
         end
       end

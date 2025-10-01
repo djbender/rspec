@@ -104,6 +104,12 @@ RSpec.configure do |c|
     metadata[:serial] = true
   end
 
+  # Tag DRb tests to run them serially (not in parallel)
+  # DRb tests start network servers that can conflict when run in parallel
+  c.define_derived_metadata(:type => :drb) do |metadata|
+    metadata[:serial] = true
+  end
+
   if ENV['CI'] && RSpec::Support::OS.windows? && RUBY_VERSION.to_f < 2.3
     c.around(:example, :emits_warning_on_windows_on_old_ruby) do |ex|
       ignoring_warnings(&ex)
