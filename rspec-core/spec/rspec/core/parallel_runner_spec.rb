@@ -777,4 +777,194 @@ RSpec.describe RSpec::Core::ParallelRunner do
       end
     end
   end
+
+  describe "formatter integration" do
+    it "sends example notifications to formatters with full example details" do
+      # Create a custom formatter to capture notifications
+      custom_formatter = Class.new(RSpec::Core::Formatters::BaseFormatter) do
+        RSpec::Core::Formatters.register self, :example_started, :example_passed,
+                                                :example_failed, :example_pending,
+                                                :start, :stop, :dump_summary
+
+        attr_reader :notifications
+
+        def initialize(output)
+          super(output)
+          @notifications = []
+        end
+
+        def example_started(notification)
+          @notifications << [:example_started, notification.example.description]
+        end
+
+        def example_passed(notification)
+          @notifications << [:example_passed, notification.example.description]
+        end
+
+        def example_failed(notification)
+          @notifications << [:example_failed, notification.example.description,
+                            notification.example.execution_result.exception.message]
+        end
+
+        def example_pending(notification)
+          @notifications << [:example_pending, notification.example.description]
+        end
+
+        def start(notification)
+          @notifications << [:start, notification.count]
+        end
+
+        def stop(notification)
+          # No-op
+        end
+
+        def dump_summary(notification)
+          @notifications << [:dump_summary, notification.example_count,
+                            notification.failure_count, notification.pending_count]
+        end
+      end
+
+      # Create configuration with custom formatter
+      config = RSpec::Core::Configuration.new
+      output = StringIO.new
+      config.add_formatter(custom_formatter, output)
+      formatter = config.reporter.registered_listeners(:example_started).first
+
+      # Create example groups with different outcomes
+      groups = []
+
+      groups << RSpec.describe("Passing Group") do
+        it "passes test 1" do
+          expect(1 + 1).to eq(2)
+        end
+
+        it "passes test 2" do
+          expect("hello").to eq("hello")
+        end
+      end
+
+      groups << RSpec.describe("Failing Group") do
+        it "fails test" do
+          expect(1).to eq(2)
+        end
+      end
+
+      groups << RSpec.describe("Pending Group") do
+        it "pending test" do
+          pending "not implemented yet"
+          expect(true).to be false
+        end
+      end
+
+      # Run via Runner to ensure formatter integration works
+      runner = RSpec::Core::Runner.new(config)
+      runner.instance_variable_set(:@world, RSpec.world)
+      runner.instance_variable_set(:@configuration, config)
+
+      # Set parallel workers
+      config.parallel_workers = 2
+
+      # Run the specs
+      runner.run_specs(groups)
+
+      # Verify formatter received all expected notifications
+      aggregate_failures do
+        # Should have received start notification with correct count
+        start_notification = formatter.notifications.find { |n| n[0] == :start }
+        expect(start_notification).not_to be_nil
+        expect(start_notification[1]).to eq(4) # 4 total examples
+
+        # Should have received example_started for each example
+        started = formatter.notifications.select { |n| n[0] == :example_started }
+        expect(started.size).to eq(4)
+        expect(started.map { |n| n[1] }).to contain_exactly(
+          "passes test 1", "passes test 2", "fails test", "pending test"
+        )
+
+        # Should have received example_passed for passing examples
+        passed = formatter.notifications.select { |n| n[0] == :example_passed }
+        expect(passed.size).to eq(2)
+        expect(passed.map { |n| n[1] }).to contain_exactly("passes test 1", "passes test 2")
+
+        # Should have received example_failed for failing example
+        failed = formatter.notifications.select { |n| n[0] == :example_failed }
+        expect(failed.size).to eq(1)
+        expect(failed[0][1]).to eq("fails test")
+        expect(failed[0][2]).to include("expected: 2") # Exception message
+
+        # Should have received example_pending for pending example
+        pending_notifications = formatter.notifications.select { |n| n[0] == :example_pending }
+        expect(pending_notifications.size).to eq(1)
+        expect(pending_notifications[0][1]).to eq("pending test")
+
+        # Should have received dump_summary with correct counts
+        summary = formatter.notifications.find { |n| n[0] == :dump_summary }
+        expect(summary).not_to be_nil
+        expect(summary[1]).to eq(4) # example_count
+        expect(summary[2]).to eq(1) # failure_count
+        expect(summary[3]).to eq(1) # pending_count
+      end
+    end
+
+    it "preserves example metadata and location information" do
+      # Create a formatter that captures full example details
+      custom_formatter = Class.new(RSpec::Core::Formatters::BaseFormatter) do
+        RSpec::Core::Formatters.register self, :example_passed, :start, :stop, :dump_summary
+
+        attr_reader :captured_examples
+
+        def initialize(output)
+          super(output)
+          @captured_examples = []
+        end
+
+        def example_passed(notification)
+          example = notification.example
+          @captured_examples << {
+            description: example.description,
+            full_description: example.full_description,
+            location: example.location,
+            file_path: example.file_path,
+            run_time: example.execution_result.run_time
+          }
+        end
+
+        def start(notification); end
+        def stop(notification); end
+        def dump_summary(notification); end
+      end
+
+      config = RSpec::Core::Configuration.new
+      output = StringIO.new
+      config.add_formatter(custom_formatter, output)
+      formatter = config.reporter.registered_listeners(:example_passed).first
+      config.parallel_workers = 2
+
+      # Create example group
+      group = RSpec.describe("Test Group") do
+        it "has metadata" do
+          expect(true).to be true
+        end
+      end
+
+      # Run via Runner
+      runner = RSpec::Core::Runner.new(config)
+      runner.instance_variable_set(:@world, RSpec.world)
+      runner.instance_variable_set(:@configuration, config)
+      runner.run_specs([group])
+
+      # Verify example details were preserved
+      expect(formatter.captured_examples.size).to eq(1)
+      example_data = formatter.captured_examples.first
+
+      aggregate_failures do
+        expect(example_data[:description]).to eq("has metadata")
+        expect(example_data[:full_description]).to eq("Test Group has metadata")
+        expect(example_data[:location]).to match(/parallel_runner_spec\.rb:\d+/)
+        expect(example_data[:file_path]).to match(/parallel_runner_spec\.rb/)
+        expect(example_data[:run_time]).to be_a(Float)
+        expect(example_data[:run_time]).to be >= 0
+      end
+    end
+  end
 end

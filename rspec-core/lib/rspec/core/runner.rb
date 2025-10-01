@@ -111,7 +111,71 @@ module RSpec
       #   or the configured failure exit code (1 by default) if specs
       #   failed.
       def run_specs(example_groups)
+        # Determine worker count, preferring CLI option over config setting
+        worker_count = @configuration.parallel_workers
+
+        # Use parallel execution if worker_count > 1
+        if worker_count && worker_count > 1
+          # Separate parallel-safe from serial-only tests
+          # Tests marked with :serial metadata run sequentially after parallel tests
+          parallel_groups, sequential_groups = partition_groups_for_parallel(example_groups)
+
+          # Run parallel tests first (if any)
+          parallel_exit_code = if parallel_groups.any?
+            run_specs_in_parallel(parallel_groups, worker_count)
+          else
+            0 # No parallel tests to run
+          end
+
+          # Run sequential tests after (if any)
+          sequential_exit_code = if sequential_groups.any?
+            run_specs_sequentially(sequential_groups)
+          else
+            0 # No sequential tests to run
+          end
+
+          # Return failure if either phase failed
+          parallel_exit_code != 0 ? parallel_exit_code : sequential_exit_code
+        else
+          # Sequential execution for all tests (original behavior)
+          run_specs_sequentially(example_groups)
+        end
+      end
+
+      # @private
+      # Run specs in parallel using ParallelRunner
+      def run_specs_in_parallel(example_groups, worker_count)
+        RSpec::Support.require_rspec_core 'parallel_runner'
         examples_count = @world.example_count(example_groups)
+
+        # Wrap parallel execution in reporter.report to ensure proper
+        # formatter lifecycle (start, stop, notifications, etc.)
+        examples_passed = @configuration.reporter.report(examples_count) do |reporter|
+          parallel_runner = RSpec::Core::ParallelRunner.new(
+            example_groups: example_groups,
+            worker_count: worker_count,
+            configuration: @configuration
+          )
+
+          result = parallel_runner.run
+
+          # Replay example notifications to formatters
+          # This allows formatters to show individual example results even though
+          # examples ran in worker processes
+          parallel_runner.replay_notifications(result.worker_results, reporter)
+
+          # Determine if all examples passed
+          result.failed_count == 0
+        end
+
+        exit_code(examples_passed)
+      end
+
+      # @private
+      # Run specs sequentially (non-parallel execution)
+      def run_specs_sequentially(example_groups)
+        examples_count = @world.example_count(example_groups)
+
         examples_passed = @configuration.reporter.report(examples_count) do |reporter|
           @configuration.with_suite_hooks do
             if examples_count == 0 && @configuration.fail_if_no_examples
@@ -123,6 +187,13 @@ module RSpec
         end
 
         exit_code(examples_passed)
+      end
+
+      # @private
+      # Partition example groups into parallel-safe and serial-only
+      # Serial tests are those marked with :serial metadata
+      def partition_groups_for_parallel(groups)
+        groups.partition { |g| !g.metadata[:serial] }
       end
 
       # @private

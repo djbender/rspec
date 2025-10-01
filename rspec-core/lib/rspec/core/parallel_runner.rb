@@ -1,3 +1,5 @@
+RSpec::Support.require_rspec_core 'parallel/example_serializer'
+
 module RSpec
   module Core
     # Runs example groups in parallel across multiple worker processes.
@@ -24,13 +26,14 @@ module RSpec
 
       # Result object returned from parallel execution
       class Result
-        attr_reader :example_count, :passed_count, :failed_count, :pending_count
+        attr_reader :example_count, :passed_count, :failed_count, :pending_count, :worker_results
 
-        def initialize(example_count:, passed_count:, failed_count:, pending_count:)
+        def initialize(example_count:, passed_count:, failed_count:, pending_count:, worker_results: [])
           @example_count = example_count
           @passed_count = passed_count
           @failed_count = failed_count
           @pending_count = pending_count
+          @worker_results = worker_results
         end
       end
 
@@ -46,6 +49,10 @@ module RSpec
       # Run the example groups across worker processes
       # @return [Result] aggregated results from all workers
       def run
+        # Save the current working directory before forking
+        # Workers will restore to this directory to avoid issues if tests change directories
+        @original_working_directory = Dir.pwd
+
         # Run suite hooks in main process, wrapping worker execution
         @configuration.with_suite_hooks do
           # Divide groups among workers
@@ -71,6 +78,38 @@ module RSpec
 
           # Aggregate results
           aggregate_results(worker_results)
+        end
+      end
+
+      # Replay example notifications to the reporter
+      # This allows formatters to receive notifications about examples that ran in workers
+      # @param worker_results [Array<Hash>] results from all workers
+      # @param reporter [RSpec::Core::Reporter] the main process reporter
+      def replay_notifications(worker_results, reporter)
+        # Iterate through each worker's results in order
+        worker_results.each do |result|
+          next unless result[:examples]
+
+          # Replay each example's notifications
+          result[:examples].each do |serialized_example|
+            # Create a stub object that quacks like an Example
+            example_stub = Parallel::ExampleStub.new(serialized_example)
+
+            # Send the same notifications that would have been sent during normal execution
+            reporter.example_started(example_stub)
+
+            # Send status-specific notification
+            case example_stub.execution_result.status
+            when :passed
+              reporter.example_passed(example_stub)
+            when :failed
+              reporter.example_failed(example_stub)
+            when :pending
+              reporter.example_pending(example_stub)
+            end
+
+            reporter.example_finished(example_stub)
+          end
         end
       end
 
@@ -105,6 +144,19 @@ module RSpec
           stderr_reader.close
 
           begin
+            # Restore to the original working directory
+            # This prevents "No such file or directory - getcwd" errors that can occur
+            # when tests change directories and those directories get deleted
+            if @original_working_directory
+              begin
+                Dir.chdir(@original_working_directory)
+              rescue Errno::ENOENT
+                # If even the original directory was deleted, chdir to a safe fallback
+                require 'tmpdir' # Lazy-load only when needed
+                Dir.chdir(Dir.tmpdir)
+              end
+            end
+
             # Redirect stdout and stderr to pipes
             # We use STDOUT/STDERR constants (real IO file descriptors) instead of
             # $stdout/$stderr (which may be reassigned to StringIO in tests).
@@ -276,6 +328,10 @@ module RSpec
         RSpec.world.configuration = @configuration
         @configuration.world = RSpec.world
 
+        # CRITICAL: Workers must run sequentially to avoid fork bomb
+        # Set parallel_workers to nil to prevent workers from forking more workers
+        @configuration.parallel_workers = nil
+
         # Create a simple reporter to track results
         reporter = SimpleReporter.new(@configuration)
 
@@ -293,7 +349,13 @@ module RSpec
           end
         end
 
+        # Serialize all examples for transmission to main process
+        serialized_examples = reporter.examples.map do |example|
+          Parallel::ExampleSerializer.serialize_example(example)
+        end
+
         {
+          examples: serialized_examples,
           example_count: reporter.examples.size,
           passed_count: reporter.passed_examples.size,
           failed_count: reporter.failed_examples.size,
@@ -336,7 +398,7 @@ module RSpec
           }
         end
 
-        Result.new(**totals)
+        Result.new(**totals, worker_results: worker_results)
       end
 
       # Simple reporter for collecting results within a worker
