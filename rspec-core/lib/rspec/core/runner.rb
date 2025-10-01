@@ -122,20 +122,20 @@ module RSpec
 
           # Run parallel tests first (if any)
           parallel_exit_code = if parallel_groups.any?
-            run_specs_in_parallel(parallel_groups, worker_count)
-          else
-            0 # No parallel tests to run
-          end
+                                 run_specs_in_parallel(parallel_groups, worker_count)
+                               else
+                                 0 # No parallel tests to run
+                               end
 
           # Run sequential tests after (if any)
           sequential_exit_code = if sequential_groups.any?
-            run_specs_sequentially(sequential_groups)
-          else
-            0 # No sequential tests to run
-          end
+                                   run_specs_sequentially(sequential_groups)
+                                 else
+                                   0 # No sequential tests to run
+                                 end
 
           # Return failure if either phase failed
-          parallel_exit_code != 0 ? parallel_exit_code : sequential_exit_code
+          parallel_exit_code == 0 ? sequential_exit_code : parallel_exit_code
         else
           # Sequential execution for all tests (original behavior)
           run_specs_sequentially(example_groups)
@@ -158,9 +158,9 @@ module RSpec
           end
 
           parallel_runner = RSpec::Core::ParallelRunner.new(
-            example_groups: example_groups,
-            worker_count: worker_count,
-            configuration: @configuration
+            :example_groups => example_groups,
+            :worker_count => worker_count,
+            :configuration => @configuration
           )
 
           result = parallel_runner.run

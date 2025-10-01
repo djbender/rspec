@@ -12,14 +12,14 @@ module RSpec
         # @return [Hash] serialized example data
         def self.serialize_example(example)
           {
-            id: example.id,
-            description: example.description,
-            full_description: example.full_description,
-            location: example.location,
-            file_path: example.file_path,
-            line_number: example.metadata[:line_number],
-            execution_result: serialize_execution_result(example.execution_result),
-            metadata: serialize_metadata(example.metadata)
+            :id => example.id,
+            :description => example.description,
+            :full_description => example.full_description,
+            :location => example.location,
+            :file_path => example.file_path,
+            :line_number => example.metadata[:line_number],
+            :execution_result => serialize_execution_result(example.execution_result),
+            :metadata => serialize_metadata(example.metadata)
           }
         end
 
@@ -28,12 +28,12 @@ module RSpec
         # @return [Hash] serialized execution result data
         def self.serialize_execution_result(result)
           {
-            status: result.status,
-            run_time: result.run_time,
-            exception: serialize_exception(result.exception),
-            pending_message: result.pending_message,
-            pending_fixed: result.pending_fixed?,
-            pending_exception: serialize_exception(result.pending_exception)
+            :status => result.status,
+            :run_time => result.run_time,
+            :exception => serialize_exception(result.exception),
+            :pending_message => result.pending_message,
+            :pending_fixed => result.pending_fixed?,
+            :pending_exception => serialize_exception(result.pending_exception)
           }
         end
 
@@ -44,9 +44,9 @@ module RSpec
           return nil unless exception
 
           {
-            class_name: exception.class.name,
-            message: exception.message,
-            backtrace: exception.backtrace || []
+            :class_name => exception.class.name,
+            :message => exception.message,
+            :backtrace => exception.backtrace || []
           }
         end
 
@@ -57,14 +57,14 @@ module RSpec
           # Extract commonly used metadata keys that are serializable
           # Avoid serializing ExampleGroup classes or Proc objects
           {
-            description: metadata[:description],
-            full_description: metadata[:full_description],
-            file_path: metadata[:file_path],
-            line_number: metadata[:line_number],
-            location: metadata[:location],
-            rerun_file_path: metadata[:rerun_file_path],
-            scoped_id: metadata[:scoped_id],
-            shared_group_inclusion_backtrace: metadata[:shared_group_inclusion_backtrace]
+            :description => metadata[:description],
+            :full_description => metadata[:full_description],
+            :file_path => metadata[:file_path],
+            :line_number => metadata[:line_number],
+            :location => metadata[:location],
+            :rerun_file_path => metadata[:rerun_file_path],
+            :scoped_id => metadata[:scoped_id],
+            :shared_group_inclusion_backtrace => metadata[:shared_group_inclusion_backtrace]
           }
         end
       end
@@ -94,10 +94,7 @@ module RSpec
         end
 
         # Provide metadata access that returns nil-safe defaults
-        def metadata
-          # Return a hash that provides nil for missing keys
-          @metadata
-        end
+        attr_reader :metadata
 
         # Return the location for rerunning this example
         def location_rerun_argument
@@ -153,11 +150,10 @@ module RSpec
 
         def class
           # Return the actual exception class if it exists, otherwise use RuntimeError
-          begin
-            Object.const_get(@class_name)
-          rescue NameError
-            RuntimeError
-          end
+
+          Object.const_get(@class_name)
+        rescue NameError
+          RuntimeError
         end
 
         # Return nil for cause (we don't serialize exception chains)
