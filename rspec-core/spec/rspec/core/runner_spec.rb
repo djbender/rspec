@@ -500,11 +500,11 @@ module RSpec::Core
               allow(RSpec::Core::ParallelRunner).to receive(:new).and_return(parallel_runner_instance)
               allow(parallel_runner_instance).to receive(:run).and_return(
                 RSpec::Core::ParallelRunner::Result.new(
-                  example_count: 1,
-                  passed_count: 1,
-                  failed_count: 0,
-                  pending_count: 0,
-                  worker_results: []
+                  :example_count => 1,
+                  :passed_count => 1,
+                  :failed_count => 0,
+                  :pending_count => 0,
+                  :worker_results => []
                 )
               )
               allow(parallel_runner_instance).to receive(:replay_notifications)
@@ -512,9 +512,9 @@ module RSpec::Core
               exit_code = runner.run_specs(runner.world.ordered_example_groups)
 
               expect(RSpec::Core::ParallelRunner).to have_received(:new).with(
-                example_groups: runner.world.ordered_example_groups,
-                worker_count: 2,
-                configuration: config
+                :example_groups => runner.world.ordered_example_groups,
+                :worker_count => 2,
+                :configuration => config
               )
               expect(parallel_runner_instance).to have_received(:run)
               expect(exit_code).to eq(0)
@@ -556,11 +556,11 @@ module RSpec::Core
               allow(RSpec::Core::ParallelRunner).to receive(:new).and_return(parallel_runner_instance)
               allow(parallel_runner_instance).to receive(:run).and_return(
                 RSpec::Core::ParallelRunner::Result.new(
-                  example_count: 1,
-                  passed_count: 1,
-                  failed_count: 0,
-                  pending_count: 0,
-                  worker_results: []
+                  :example_count => 1,
+                  :passed_count => 1,
+                  :failed_count => 0,
+                  :pending_count => 0,
+                  :worker_results => []
                 )
               )
               allow(parallel_runner_instance).to receive(:replay_notifications)
@@ -569,7 +569,7 @@ module RSpec::Core
 
               # CLI value (4) should override config value (2)
               expect(RSpec::Core::ParallelRunner).to have_received(:new).with(
-                hash_including(worker_count: 4)
+                hash_including(:worker_count => 4)
               )
             end
 
@@ -584,11 +584,11 @@ module RSpec::Core
               allow(RSpec::Core::ParallelRunner).to receive(:new).and_return(parallel_runner_instance)
               allow(parallel_runner_instance).to receive(:run).and_return(
                 RSpec::Core::ParallelRunner::Result.new(
-                  example_count: 1,
-                  passed_count: 1,
-                  failed_count: 0,
-                  pending_count: 0,
-                  worker_results: []
+                  :example_count => 1,
+                  :passed_count => 1,
+                  :failed_count => 0,
+                  :pending_count => 0,
+                  :worker_results => []
                 )
               )
               allow(parallel_runner_instance).to receive(:replay_notifications)
