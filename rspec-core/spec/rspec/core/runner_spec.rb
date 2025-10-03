@@ -597,6 +597,65 @@ module RSpec::Core
 
               expect(out.string).to include("Running tests in parallel using 3 processes")
             end
+
+            it "returns 0 when parallel mode is enabled but all groups are marked :serial" do
+              # Create a spec file with only serial tests
+              serial_spec = Tempfile.new(['serial_spec', '.rb'])
+              begin
+                serial_spec.write(<<-RUBY)
+                  RSpec.describe "Serial only", :serial do
+                    it "passes" do
+                      expect(true).to be true
+                    end
+                  end
+                RUBY
+                serial_spec.close
+
+                allow(config).to receive(:files_to_run).and_return([serial_spec.path])
+                config.parallel_workers = 2
+
+                runner = build_runner
+                runner.setup err, out
+
+                # Mock the sequential runner to return success
+                allow(runner).to receive(:run_specs_sequentially).and_return(0)
+
+                exit_code = runner.run_specs(runner.world.ordered_example_groups)
+
+                # Should return 0 when no parallel groups exist (all are serial)
+                expect(exit_code).to eq(0)
+              ensure
+                serial_spec.close unless serial_spec.closed?
+                serial_spec.unlink
+              end
+            end
+
+            it "returns 0 when parallel mode is enabled but no groups are marked :serial" do
+              allow(config).to receive(:files_to_run).and_return([passing_spec_filename])
+              config.parallel_workers = 2
+
+              runner = build_runner
+              runner.setup err, out
+
+              # Mock parallel runner to simulate success with no serial groups
+              parallel_runner_instance = instance_double(RSpec::Core::ParallelRunner)
+              allow(RSpec::Core::ParallelRunner).to receive(:new).and_return(parallel_runner_instance)
+              allow(parallel_runner_instance).to receive(:run).and_return(
+                RSpec::Core::ParallelRunner::Result.new(
+                  :example_count => 1,
+                  :passed_count => 1,
+                  :failed_count => 0,
+                  :pending_count => 0,
+                  :worker_results => []
+                )
+              )
+              allow(parallel_runner_instance).to receive(:replay_notifications)
+
+              exit_code = runner.run_specs(runner.world.ordered_example_groups)
+
+              # Should return 0 for sequential groups (none exist)
+              expect(exit_code).to eq(0)
+            end
           end
         end
       end

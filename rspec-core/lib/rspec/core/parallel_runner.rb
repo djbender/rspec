@@ -205,6 +205,21 @@ module RSpec
             stdout_writer.close
             stderr_writer.close
             stop_reader.close
+
+            # Capture coverage data before exit! (which bypasses at_exit hooks)
+            # This is only active when running tests with SimpleCov enabled
+            if defined?(SimpleCov)
+              begin
+                # SimpleCov normally saves coverage in an at_exit hook, but exit! bypasses those.
+                # We manually trigger coverage storage here to capture data from forked workers.
+                Coverage.result(stop: false, clear: false) if defined?(Coverage)
+                SimpleCov::ResultMerger.store_result(SimpleCov.result)
+              rescue StandardError => e
+                # Silently ignore coverage errors to avoid breaking worker processes
+                # Coverage failures should not impact test execution
+                warn "Warning: SimpleCov coverage capture failed in worker: #{e.message}" if $VERBOSE
+              end
+            end
           end
           exit!(WORKER_SUCCESS_EXIT_CODE)
         end
