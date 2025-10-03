@@ -438,6 +438,7 @@ module RSpec
       end
 
       # Simple reporter for collecting results within a worker
+      # @private
       class SimpleReporter
         attr_reader :examples, :passed_examples, :failed_examples, :pending_examples
 
@@ -449,42 +450,61 @@ module RSpec
           @configuration = configuration
         end
 
+        # Called when an example group starts
+        # @param _group [RSpec::Core::ExampleGroup] the example group (unused)
         def example_group_started(_group)
           # No-op: we don't track group-level events
         end
 
+        # Called when an example group finishes
+        # @param _group [RSpec::Core::ExampleGroup] the example group (unused)
         def example_group_finished(_group)
           # No-op: we don't track group-level events
         end
 
+        # Called when an example starts
+        # @param example [RSpec::Core::Example] the example that started
         def example_started(example)
           @examples << example
         end
 
+        # Called when an example finishes
+        # @param _example [RSpec::Core::Example] the example that finished (unused)
         def example_finished(_example)
           # No-op: we track pass/fail/pending separately
         end
 
+        # Called when an example passes
+        # @param example [RSpec::Core::Example] the example that passed
         def example_passed(example)
           @passed_examples << example
         end
 
+        # Called when an example fails
+        # @param example [RSpec::Core::Example] the example that failed
         def example_failed(example)
           @failed_examples << example
         end
 
+        # Called when an example is pending
+        # @param example [RSpec::Core::Example] the example that is pending
         def example_pending(example)
           @pending_examples << example
         end
 
+        # Called when the test run starts
+        # @param _expected_example_count [Integer] expected number of examples (unused)
         def start(_expected_example_count)
           # No-op: minimal reporter doesn't need start hook
         end
 
+        # Called when the test run stops
         def stop
           # No-op: minimal reporter doesn't need stop hook
         end
 
+        # Called when a message should be reported
+        # @param _message [String] the message (unused)
         def message(_message)
           # No-op: minimal reporter doesn't output messages
         end
