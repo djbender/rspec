@@ -41,6 +41,9 @@ begin
 
       minimum_coverage(100)
 
+      # Enable branch coverage to track conditional execution paths
+      enable_coverage :branch
+
       # Enable result merging to combine coverage from multiple test runs
       use_merging true
       merge_timeout 30 # Allow 30 seconds for merging results
