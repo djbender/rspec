@@ -1,5 +1,9 @@
 module RSpec
   module Core
+    # Provides utilities for parallel test execution.
+    # Contains serializers and stub objects for transmitting example data between processes.
+    #
+    # @private
     module Parallel
       # Serializes Example objects for transmission from worker processes to main process.
       # Example objects contain circular references and non-serializable state (e.g., ExampleGroup instances),
