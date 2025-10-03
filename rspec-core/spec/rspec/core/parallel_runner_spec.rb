@@ -3,11 +3,13 @@ require 'rspec/core/parallel_runner'
 
 RSpec.describe RSpec::Core::ParallelRunner do
   # Helper to run groups with ParallelRunner
-  def run_parallel(groups, worker_count: 2, configuration: RSpec.configuration)
+  def run_parallel(groups, options={})
+    worker_count = options.fetch(:worker_count, 2)
+    configuration = options.fetch(:configuration, RSpec.configuration)
     parallel_runner = RSpec::Core::ParallelRunner.new(
-      example_groups: groups,
-      worker_count: worker_count,
-      configuration: configuration
+      :example_groups => groups,
+      :worker_count => worker_count,
+      :configuration => configuration
     )
     parallel_runner.run
   end
@@ -63,8 +65,10 @@ RSpec.describe RSpec::Core::ParallelRunner do
 
         # Verify examples ran in different worker processes
         lines = File.read(log_path).split("\n")
-        group1_pid = lines.find { |l| l.start_with?('group1:') }&.split(':')&.last&.to_i
-        group2_pid = lines.find { |l| l.start_with?('group2:') }&.split(':')&.last&.to_i
+        group1_line = lines.find { |l| l.start_with?('group1:') }
+        group1_pid = group1_line ? group1_line.split(':').last.to_i : nil
+        group2_line = lines.find { |l| l.start_with?('group2:') }
+        group2_pid = group2_line ? group2_line.split(':').last.to_i : nil
 
         aggregate_failures do
           expect(group1_pid).not_to be_nil, "Group 1 should have run"
@@ -108,7 +112,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
         it("will error") { raise "Intentional test error" }
       end
 
-      result = run_parallel([error_group], worker_count: 1)
+      result = run_parallel([error_group], :worker_count => 1)
 
       aggregate_failures do
         expect(result.example_count).to eq(1)
@@ -141,7 +145,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
           end
         end
 
-        result = run_parallel(groups, worker_count: 2)
+        result = run_parallel(groups, :worker_count => 2)
         lines = File.read(log_path).split("\n")
 
         aggregate_failures do
@@ -169,7 +173,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
           end
         end
 
-        result = run_parallel(groups, worker_count: 3)
+        result = run_parallel(groups, :worker_count => 3)
         lines = File.read(log_path).split("\n").sort
 
         aggregate_failures do
@@ -193,7 +197,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
       end
 
       # The exception should be captured as a failed example, not crash the worker
-      result = run_parallel([error_group], worker_count: 1)
+      result = run_parallel([error_group], :worker_count => 1)
 
       aggregate_failures do
         expect(result.example_count).to eq(1)
@@ -247,10 +251,10 @@ RSpec.describe RSpec::Core::ParallelRunner do
         expect(error_output.string).to include("stderr from worker 2", "more stderr")
 
         # Verify output appears exactly once (no duplication)
-        expect(output.string.scan(/stdout from worker 1/).count).to eq(1)
-        expect(output.string.scan(/more stdout/).count).to eq(1)
-        expect(error_output.string.scan(/stderr from worker 2/).count).to eq(1)
-        expect(error_output.string.scan(/more stderr/).count).to eq(1)
+        expect(output.string.scan('stdout from worker 1').count).to eq(1)
+        expect(output.string.scan('more stdout').count).to eq(1)
+        expect(error_output.string.scan('stderr from worker 2').count).to eq(1)
+        expect(error_output.string.scan('more stderr').count).to eq(1)
       end
     end
   end
@@ -271,7 +275,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
           end
         end
 
-        result = run_parallel(groups, worker_count: 3, configuration: config)
+        result = run_parallel(groups, :worker_count => 3, :configuration => config)
 
         expect(result.example_count).to eq(3)
         expect(result.passed_count).to eq(3)
@@ -319,7 +323,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
           end
         end
 
-        result = run_parallel(groups, worker_count: 3)
+        result = run_parallel(groups, :worker_count => 3)
 
         expect(result.example_count).to eq(10)
         expect(result.passed_count).to eq(10)
@@ -367,7 +371,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
           end
         end
 
-        result = run_parallel(groups, worker_count: 3, configuration: config)
+        result = run_parallel(groups, :worker_count => 3, :configuration => config)
 
         aggregate_failures do
           # Should have stopped early, not run all 10 examples
@@ -407,7 +411,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
           end
         end
 
-        result = run_parallel(groups, worker_count: 3, configuration: config)
+        result = run_parallel(groups, :worker_count => 3, :configuration => config)
 
         aggregate_failures do
           # Should have exactly 2 failures (or possibly more if worker was mid-execution)
@@ -456,7 +460,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
         # Restore original config
         RSpec.configuration = original_config
 
-        result = run_parallel(groups, worker_count: 3, configuration: config)
+        result = run_parallel(groups, :worker_count => 3, :configuration => config)
         lines = File.read(log_path).split("\n")
         parent_pid = Process.pid
         before_hook_pids = lines.grep(/before_example:/).map { |l| l.split(':').last.to_i }
@@ -493,7 +497,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
           end
         end
 
-        result = run_parallel(groups, worker_count: 2, configuration: config)
+        result = run_parallel(groups, :worker_count => 2, :configuration => config)
         lines = File.read(log_path).split("\n")
         seeds = lines.grep(/example\d+:seed:/).map { |l| l.split(':').last.to_i }
 
@@ -527,7 +531,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
           end
         end
 
-        result = run_parallel([group], worker_count: 1, configuration: config)
+        result = run_parallel([group], :worker_count => 1, :configuration => config)
         lines = File.read(log_path).split("\n")
 
         aggregate_failures do
@@ -563,12 +567,12 @@ RSpec.describe RSpec::Core::ParallelRunner do
         end
 
         # Run first time
-        result1 = run_parallel(groups, worker_count: 3, configuration: config)
+        result1 = run_parallel(groups, :worker_count => 3, :configuration => config)
         lines1 = File.read(log_path).split("\n").sort
 
         # Clear log and run again with same seed
         File.write(log_path, "")
-        result2 = run_parallel(groups, worker_count: 3, configuration: config)
+        result2 = run_parallel(groups, :worker_count => 3, :configuration => config)
         lines2 = File.read(log_path).split("\n").sort
 
         aggregate_failures do
@@ -608,7 +612,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
         config1 = RSpec::Core::Configuration.new
         config1.seed = 12345
         config1.order = :random
-        result1 = run_parallel(groups, worker_count: 2, configuration: config1)
+        result1 = run_parallel(groups, :worker_count => 2, :configuration => config1)
         lines1 = File.read(log_path).split("\n")
 
         # Clear and run with seed 54321
@@ -616,7 +620,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
         config2 = RSpec::Core::Configuration.new
         config2.seed = 54321
         config2.order = :random
-        result2 = run_parallel(groups, worker_count: 2, configuration: config2)
+        result2 = run_parallel(groups, :worker_count => 2, :configuration => config2)
         lines2 = File.read(log_path).split("\n")
 
         aggregate_failures do
@@ -674,7 +678,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
           end
         end
 
-        result = run_parallel(groups, worker_count: 2, configuration: config)
+        result = run_parallel(groups, :worker_count => 2, :configuration => config)
         lines = File.read(log_path).split("\n")
 
         aggregate_failures do
@@ -715,7 +719,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
           end
         end
 
-        result = run_parallel(groups, worker_count: 2, configuration: config)
+        result = run_parallel(groups, :worker_count => 2, :configuration => config)
         lines = File.read(log_path).split("\n")
 
         aggregate_failures do
@@ -764,7 +768,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
           end
         end
 
-        result = run_parallel(groups, worker_count: 2, configuration: config)
+        result = run_parallel(groups, :worker_count => 2, :configuration => config)
         lines = File.read(log_path).split("\n")
 
         aggregate_failures do
@@ -783,8 +787,8 @@ RSpec.describe RSpec::Core::ParallelRunner do
       # Create a custom formatter to capture notifications
       custom_formatter = Class.new(RSpec::Core::Formatters::BaseFormatter) do
         RSpec::Core::Formatters.register self, :example_started, :example_passed,
-                                                :example_failed, :example_pending,
-                                                :start, :stop, :dump_summary
+                                         :example_failed, :example_pending,
+                                         :start, :stop, :dump_summary
 
         attr_reader :notifications
 
@@ -803,7 +807,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
 
         def example_failed(notification)
           @notifications << [:example_failed, notification.example.description,
-                            notification.example.execution_result.exception.message]
+                             notification.example.execution_result.exception.message]
         end
 
         def example_pending(notification)
@@ -820,7 +824,7 @@ RSpec.describe RSpec::Core::ParallelRunner do
 
         def dump_summary(notification)
           @notifications << [:dump_summary, notification.example_count,
-                            notification.failure_count, notification.pending_count]
+                             notification.failure_count, notification.pending_count]
         end
       end
 
@@ -922,11 +926,11 @@ RSpec.describe RSpec::Core::ParallelRunner do
         def example_passed(notification)
           example = notification.example
           @captured_examples << {
-            description: example.description,
-            full_description: example.full_description,
-            location: example.location,
-            file_path: example.file_path,
-            run_time: example.execution_result.run_time
+            :description => example.description,
+            :full_description => example.full_description,
+            :location => example.location,
+            :file_path => example.file_path,
+            :run_time => example.execution_result.run_time
           }
         end
 

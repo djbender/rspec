@@ -28,22 +28,23 @@ module RSpec
       class Result
         attr_reader :example_count, :passed_count, :failed_count, :pending_count, :worker_results
 
-        def initialize(example_count:, passed_count:, failed_count:, pending_count:, worker_results: [])
-          @example_count = example_count
-          @passed_count = passed_count
-          @failed_count = failed_count
-          @pending_count = pending_count
-          @worker_results = worker_results
+        def initialize(options)
+          @example_count = options.fetch(:example_count)
+          @passed_count = options.fetch(:passed_count)
+          @failed_count = options.fetch(:failed_count)
+          @pending_count = options.fetch(:pending_count)
+          @worker_results = options.fetch(:worker_results, [])
         end
       end
 
-      # @param example_groups [Array<ExampleGroup>] the groups to run
-      # @param worker_count [Integer] number of worker processes to fork
-      # @param configuration [Configuration] RSpec configuration
-      def initialize(example_groups:, worker_count:, configuration:)
-        @example_groups = example_groups
-        @worker_count = worker_count
-        @configuration = configuration
+      # @param options [Hash] initialization options
+      # @option options [Array<ExampleGroup>] :example_groups the groups to run
+      # @option options [Integer] :worker_count number of worker processes to fork
+      # @option options [Configuration] :configuration RSpec configuration
+      def initialize(options)
+        @example_groups = options.fetch(:example_groups)
+        @worker_count = options.fetch(:worker_count)
+        @configuration = options.fetch(:configuration)
       end
 
       # Run the example groups across worker processes
@@ -132,6 +133,8 @@ module RSpec
       # @param _worker_index [Integer] worker index (reserved for future use in logging/debugging)
       # @param stop_reader [IO] pipe to check for stop signal
       # @return [Hash] worker information (pid, pipes)
+      # rubocop:disable Metrics/AbcSize
+      # rubocop:disable Metrics/MethodLength
       def fork_worker(groups, _worker_index, stop_reader)
         # Create pipes for IPC and output capture
         result_reader, result_writer = IO.pipe
@@ -161,11 +164,13 @@ module RSpec
             # We use STDOUT/STDERR constants (real IO file descriptors) instead of
             # $stdout/$stderr (which may be reassigned to StringIO in tests).
             # This ensures we can reliably dup/reopen the streams.
+            # rubocop:disable Style/GlobalStdStream
             saved_stdout = STDOUT.dup
             saved_stderr = STDERR.dup
 
             STDOUT.reopen(stdout_writer)
             STDERR.reopen(stderr_writer)
+            # rubocop:enable Style/GlobalStdStream
             $stdout = STDOUT
             $stderr = STDERR
 
@@ -179,8 +184,10 @@ module RSpec
             # Restore stdout/stderr for Marshal
             # We must restore to original FDs because $stdout/$stderr might be
             # StringIO objects in test environments (not real IO objects)
+            # rubocop:disable Style/GlobalStdStream
             STDOUT.reopen(saved_stdout)
             STDERR.reopen(saved_stderr)
+            # rubocop:enable Style/GlobalStdStream
             $stdout = STDOUT
             $stderr = STDERR
             saved_stdout.close
@@ -191,13 +198,13 @@ module RSpec
           rescue StandardError => e
             # Send error information back to parent
             error_result = {
-              error: true,
-              message: e.message,
-              backtrace: e.backtrace,
-              example_count: 0,
-              passed_count: 0,
-              failed_count: 0,
-              pending_count: 0
+              :error => true,
+              :message => e.message,
+              :backtrace => e.backtrace,
+              :example_count => 0,
+              :passed_count => 0,
+              :failed_count => 0,
+              :pending_count => 0
             }
             Marshal.dump(error_result, result_writer)
           ensure
@@ -212,7 +219,7 @@ module RSpec
               begin
                 # SimpleCov normally saves coverage in an at_exit hook, but exit! bypasses those.
                 # We manually trigger coverage storage here to capture data from forked workers.
-                Coverage.result(stop: false, clear: false) if defined?(Coverage)
+                Coverage.result(:stop => false, :clear => false) if defined?(Coverage)
                 SimpleCov::ResultMerger.store_result(SimpleCov.result)
               rescue StandardError => e
                 # Silently ignore coverage errors to avoid breaking worker processes
@@ -230,12 +237,14 @@ module RSpec
 
         # Return worker info for later collection
         {
-          pid: pid,
-          result_reader: result_reader,
-          stdout_reader: stdout_reader,
-          stderr_reader: stderr_reader
+          :pid => pid,
+          :result_reader => result_reader,
+          :stdout_reader => stdout_reader,
+          :stderr_reader => stderr_reader
         }
       end
+      # rubocop:enable Metrics/AbcSize
+      # rubocop:enable Metrics/MethodLength
 
       # Collect results from all workers, monitoring for fail-fast
       # @param workers [Array<Hash>] worker information from fork_worker
@@ -253,7 +262,9 @@ module RSpec
           )
 
           # Unmarshal the result
+          # rubocop:disable Security/MarshalLoad
           result = Marshal.load(result_data)
+          # rubocop:enable Security/MarshalLoad
 
           # Wait for worker to finish
           Process.wait(worker[:pid])
@@ -264,22 +275,22 @@ module RSpec
 
           # Check if worker encountered an error
           if result.is_a?(Hash) && result[:error]
-            raise "Worker process failed: #{result[:message]}\n#{result[:backtrace]&.join("\n")}"
+            backtrace_str = result[:backtrace] ? result[:backtrace].join("\n") : ""
+            raise "Worker process failed: #{result[:message]}\n#{backtrace_str}"
           end
 
           results << result
 
           # Check fail-fast condition
           total_failures += result[:failed_count]
-          if should_stop_for_fail_fast?(total_failures) && !fail_fast_triggered
-            fail_fast_triggered = true
-            # Signal remaining workers to stop
-            begin
-              stop_writer.write(STOP_SIGNAL)
-              stop_writer.flush
-            rescue Errno::EPIPE
-              # Pipe already closed (all workers finished), ignore
-            end
+          next unless should_stop_for_fail_fast?(total_failures) && !fail_fast_triggered
+          fail_fast_triggered = true
+          # Signal remaining workers to stop
+          begin
+            stop_writer.write(STOP_SIGNAL)
+            stop_writer.flush
+          rescue Errno::EPIPE
+            # Pipe already closed (all workers finished), ignore
           end
         end
 
@@ -305,9 +316,9 @@ module RSpec
       # @param stderr_reader [IO] pipe for reading worker stderr
       # @return [Array<String>] tuple of [result_data, stdout_output, stderr_output]
       def read_worker_streams(result_reader, stdout_reader, stderr_reader)
-        result_data = String.new
-        stdout_output = String.new
-        stderr_output = String.new
+        result_data = ''.dup
+        stdout_output = ''.dup
+        stderr_output = ''.dup
 
         # Use IO.select to read from multiple streams without blocking
         readers = [result_reader, stdout_reader, stderr_reader]
@@ -372,11 +383,11 @@ module RSpec
         end
 
         {
-          examples: serialized_examples,
-          example_count: reporter.examples.size,
-          passed_count: reporter.passed_examples.size,
-          failed_count: reporter.failed_examples.size,
-          pending_count: reporter.pending_examples.size
+          :examples => serialized_examples,
+          :example_count => reporter.examples.size,
+          :passed_count => reporter.passed_examples.size,
+          :failed_count => reporter.failed_examples.size,
+          :pending_count => reporter.pending_examples.size
         }
       end
 
@@ -385,7 +396,9 @@ module RSpec
       # @return [Boolean] true if stop signal received
       def should_stop?(stop_reader)
         # Use IO.select with timeout for non-blocking check
+        # rubocop:disable Lint/IncompatibleIoSelectWithFiberScheduler
         ready, = IO.select([stop_reader], nil, nil, STOP_CHECK_TIMEOUT)
+        # rubocop:enable Lint/IncompatibleIoSelectWithFiberScheduler
         if ready
           begin
             # Try to read the stop signal
@@ -402,20 +415,26 @@ module RSpec
       # Aggregate results from all workers
       def aggregate_results(worker_results)
         totals = worker_results.reduce(
-          example_count: 0,
-          passed_count: 0,
-          failed_count: 0,
-          pending_count: 0
+          :example_count => 0,
+          :passed_count => 0,
+          :failed_count => 0,
+          :pending_count => 0
         ) do |acc, result|
           {
-            example_count: acc[:example_count] + result[:example_count],
-            passed_count: acc[:passed_count] + result[:passed_count],
-            failed_count: acc[:failed_count] + result[:failed_count],
-            pending_count: acc[:pending_count] + result[:pending_count]
+            :example_count => acc[:example_count] + result[:example_count],
+            :passed_count => acc[:passed_count] + result[:passed_count],
+            :failed_count => acc[:failed_count] + result[:failed_count],
+            :pending_count => acc[:pending_count] + result[:pending_count]
           }
         end
 
-        Result.new(**totals, worker_results: worker_results)
+        Result.new(
+          :example_count => totals[:example_count],
+          :passed_count => totals[:passed_count],
+          :failed_count => totals[:failed_count],
+          :pending_count => totals[:pending_count],
+          :worker_results => worker_results
+        )
       end
 
       # Simple reporter for collecting results within a worker

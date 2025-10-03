@@ -33,8 +33,9 @@ module RSpec::Core
   private
 
     # rubocop:disable Metrics/AbcSize
-    # rubocop:disable Metrics/MethodLength
+    # rubocop:disable Metrics/BlockLength
     # rubocop:disable Metrics/CyclomaticComplexity
+    # rubocop:disable Metrics/MethodLength
     # rubocop:disable Metrics/PerceivedComplexity
     def parser(options)
       OptionParser.new do |parser|
@@ -329,8 +330,9 @@ FILTERING
       end
     end
     # rubocop:enable Metrics/AbcSize
-    # rubocop:enable Metrics/MethodLength
+    # rubocop:enable Metrics/BlockLength
     # rubocop:enable Metrics/CyclomaticComplexity
+    # rubocop:enable Metrics/MethodLength
     # rubocop:enable Metrics/PerceivedComplexity
 
     def add_tag_filter(options, filter_type, tag_name, value=true)
