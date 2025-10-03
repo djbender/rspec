@@ -4,6 +4,7 @@ require 'rspec/support/spec/in_sub_process'
 
 RSpec.describe RSpec::Core::ParallelRunner do
   include RSpec::Support::InSubProcess
+
   # Helper to run groups with ParallelRunner
   def run_parallel(groups, options={})
     worker_count = options.fetch(:worker_count, 2)
